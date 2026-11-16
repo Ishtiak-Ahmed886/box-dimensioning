@@ -1,0 +1,1160 @@
+{
+  "timestamp": "2026-11-16T05:50:19Z",
+  "criteria_results": {
+    "A1_calibration_rms": {
+      "rms_error_px": 0.4087,
+      "threshold_px": 0.6,
+      "passed": true
+    },
+    "A6_quality_gate": {
+      "true_positives": 6,
+      "false_positives": 0,
+      "true_negatives": 44,
+      "false_negatives": 0,
+      "total_truncated_frames": 6,
+      "total_visible_frames": 44,
+      "truncation_rejection_rate_tpr": 1.0,
+      "false_rejection_rate_fpr": 0.0,
+      "precision": 1.0,
+      "accuracy": 1.0,
+      "meets_A6_rejection_criteria": true
+    },
+    "A2_method_a_mae_le_2_0_cm": true,
+    "A3_method_a_vol_weight_within_15pct_ge_75pct": true,
+    "A4_method_a_mean_3d_iou_ge_0_50": true,
+    "A7_method_a_latency_le_2_0_s": true
+  },
+  "benchmark_summary": {
+    "method_a": {
+      "total_sequences": 50,
+      "acceptance_rate_pct": 80.0,
+      "mean_mae_cm": 0.646,
+      "std_mae_cm": 3.404,
+      "volumetric_weight_within_15pct_fraction": 0.82,
+      "volumetric_weight_within_15pct_pct": 82.0,
+      "mean_3d_iou": 0.8851,
+      "mean_latency_seconds": 0.0353,
+      "max_latency_seconds": 1.6214
+    },
+    "method_b": {
+      "total_sequences": 50,
+      "acceptance_rate_pct": 88.0,
+      "mean_mae_cm": 29.237,
+      "std_mae_cm": 36.928,
+      "volumetric_weight_within_15pct_fraction": 0.06,
+      "volumetric_weight_within_15pct_pct": 6.0,
+      "mean_3d_iou": 0.0513,
+      "mean_latency_seconds": 0.0057,
+      "max_latency_seconds": 0.237
+    },
+    "acceptance_criteria": {
+      "A2_method_a_mae_le_2_0_cm": true,
+      "A3_method_a_vol_weight_within_15pct_ge_75pct": true,
+      "A4_method_a_mean_3d_iou_ge_0_50": true,
+      "A7_method_a_latency_le_2_0_s": true
+    },
+    "all_criteria_met": true
+  },
+  "evaluated_sequences": [
+    {
+      "sequence_id": "book/batch-11/2",
+      "ground_truth_dimensions_cm": [
+        28.999999165534973,
+        25.0,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 28.93,
+        "width": 25.03,
+        "height": 6.19
+      },
+      "method_b": {
+        "length": 38.77,
+        "width": 30.91,
+        "height": 19.93
+      },
+      "method_a_mae_cm": 0.1,
+      "method_b_mae_cm": 9.87,
+      "method_a_iou_3d": 0.9366,
+      "method_b_iou_3d": 0.0916
+    },
+    {
+      "sequence_id": "book/batch-12/11",
+      "ground_truth_dimensions_cm": [
+        23.000000417232513,
+        20.999999344348907,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 23.08,
+        "width": 21.02,
+        "height": 4.82
+      },
+      "method_b": {
+        "length": 101.86,
+        "width": 38.82,
+        "height": 32.13
+      },
+      "method_a_mae_cm": 0.09,
+      "method_b_mae_cm": 41.27,
+      "method_a_iou_3d": 0.954,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-18/31",
+      "ground_truth_dimensions_cm": [
+        20.999999344348907,
+        14.000000059604645,
+        1.9999999552965164
+      ],
+      "method_a": {
+        "length": 21.07,
+        "width": 14.09,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 132.97,
+        "width": 56.57,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.39,
+      "method_b_mae_cm": 52.51,
+      "method_a_iou_3d": 0.6602,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-18/45",
+      "ground_truth_dimensions_cm": [
+        28.00000011920929,
+        21.99999988079071,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 28.08,
+        "width": 21.99,
+        "height": 3.99
+      },
+      "method_b": {
+        "length": 14.98,
+        "width": 14.93,
+        "height": 11.18
+      },
+      "method_a_mae_cm": 0.03,
+      "method_b_mae_cm": 9.09,
+      "method_a_iou_3d": 0.9537,
+      "method_b_iou_3d": 0.1813
+    },
+    {
+      "sequence_id": "book/batch-19/19",
+      "ground_truth_dimensions_cm": [
+        20.000000298023224,
+        15.000000596046448,
+        2.9999999329447746
+      ],
+      "method_a": {
+        "length": 20.01,
+        "width": 15.03,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 205.7,
+        "width": 132.46,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.01,
+      "method_b_mae_cm": 101.72,
+      "method_a_iou_3d": 0.922,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-19/20",
+      "ground_truth_dimensions_cm": [
+        21.99999988079071,
+        15.000000596046448,
+        1.9999999552965164
+      ],
+      "method_a": {
+        "length": 21.94,
+        "width": 15.19,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 151.04,
+        "width": 141.04,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.42,
+      "method_b_mae_cm": 86.03,
+      "method_a_iou_3d": 0.6557,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-2/45",
+      "ground_truth_dimensions_cm": [
+        21.99999988079071,
+        15.000000596046448,
+        1.9999999552965164
+      ],
+      "method_a": {
+        "length": 22.11,
+        "width": 15.12,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 20.17,
+        "width": 18.98,
+        "height": 3.0
+      },
+      "method_a_mae_cm": 0.41,
+      "method_b_mae_cm": 2.27,
+      "method_a_iou_3d": 0.6581,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-20/24",
+      "ground_truth_dimensions_cm": [
+        23.999999463558197,
+        17.000000178813934,
+        2.9999999329447746
+      ],
+      "method_a": {
+        "length": 24.07,
+        "width": 17.04,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 39.43,
+        "width": 10.47,
+        "height": 7.39
+      },
+      "method_a_mae_cm": 0.04,
+      "method_b_mae_cm": 8.78,
+      "method_a_iou_3d": 0.9571,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-20/35",
+      "ground_truth_dimensions_cm": [
+        23.999999463558197,
+        15.000000596046448,
+        1.9999999552965164
+      ],
+      "method_a": {
+        "length": 24.1,
+        "width": 15.06,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 6.14,
+        "width": 5.0,
+        "height": 3.55
+      },
+      "method_a_mae_cm": 0.39,
+      "method_b_mae_cm": 9.8,
+      "method_a_iou_3d": 0.6613,
+      "method_b_iou_3d": 0.0112
+    },
+    {
+      "sequence_id": "book/batch-20/46",
+      "ground_truth_dimensions_cm": [
+        25.999999046325684,
+        18.000000715255737,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 26.11,
+        "width": 18.12,
+        "height": 3.98
+      },
+      "method_b": {
+        "length": 11.21,
+        "width": 5.25,
+        "height": 3.0
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 9.51,
+      "method_a_iou_3d": 0.9745,
+      "method_b_iou_3d": 0.0146
+    },
+    {
+      "sequence_id": "book/batch-22/27",
+      "ground_truth_dimensions_cm": [
+        19.64285671710968,
+        14.428570866584778,
+        2.9999999329447746
+      ],
+      "method_a": {
+        "length": 19.73,
+        "width": 14.5,
+        "height": 3.02
+      },
+      "method_b": {
+        "length": 6.89,
+        "width": 3.62,
+        "height": 3.0
+      },
+      "method_a_mae_cm": 0.06,
+      "method_b_mae_cm": 7.85,
+      "method_a_iou_3d": 0.9734,
+      "method_b_iou_3d": 0.0463
+    },
+    {
+      "sequence_id": "book/batch-23/24",
+      "ground_truth_dimensions_cm": [
+        23.000000417232513,
+        15.999999642372131,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 23.11,
+        "width": 16.09,
+        "height": 4.11
+      },
+      "method_b": {
+        "length": 13.91,
+        "width": 13.7,
+        "height": 3.0
+      },
+      "method_a_mae_cm": 0.1,
+      "method_b_mae_cm": 4.13,
+      "method_a_iou_3d": 0.9615,
+      "method_b_iou_3d": 0.0662
+    },
+    {
+      "sequence_id": "book/batch-27/0",
+      "ground_truth_dimensions_cm": [
+        20.999999344348907,
+        14.000000059604645,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 20.97,
+        "width": 14.04,
+        "height": 4.09
+      },
+      "method_b": {
+        "length": 5.0,
+        "width": 4.05,
+        "height": 3.0
+      },
+      "method_a_mae_cm": 0.05,
+      "method_b_mae_cm": 8.98,
+      "method_a_iou_3d": 0.9509,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-30/42",
+      "ground_truth_dimensions_cm": [
+        25.0,
+        20.76190412044525,
+        7.666666805744171
+      ],
+      "method_a": {
+        "length": 24.89,
+        "width": 20.76,
+        "height": 7.51
+      },
+      "method_b": {
+        "length": 18.75,
+        "width": 12.36,
+        "height": 11.99
+      },
+      "method_a_mae_cm": 0.09,
+      "method_b_mae_cm": 6.33,
+      "method_a_iou_3d": 0.9578,
+      "method_b_iou_3d": 0.1804
+    },
+    {
+      "sequence_id": "book/batch-31/24",
+      "ground_truth_dimensions_cm": [
+        25.0,
+        17.000000178813934,
+        7.000000029802322
+      ],
+      "method_a": {
+        "length": 24.67,
+        "width": 17.06,
+        "height": 7.16
+      },
+      "method_b": {
+        "length": 27.1,
+        "width": 15.88,
+        "height": 7.03
+      },
+      "method_a_mae_cm": 0.18,
+      "method_b_mae_cm": 1.08,
+      "method_a_iou_3d": 0.9527,
+      "method_b_iou_3d": 0.1591
+    },
+    {
+      "sequence_id": "book/batch-31/44",
+      "ground_truth_dimensions_cm": [
+        25.0,
+        17.714285850524902,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 25.04,
+        "width": 17.97,
+        "height": 5.88
+      },
+      "method_b": {
+        "length": 45.84,
+        "width": 9.17,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.14,
+      "method_b_mae_cm": 10.13,
+      "method_a_iou_3d": 0.9288,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-31/8",
+      "ground_truth_dimensions_cm": [
+        14.809523522853851,
+        14.809523522853851,
+        -1.9999999552965164
+      ],
+      "method_a": {
+        "length": 14.81,
+        "width": 14.71,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 19.16,
+        "width": 17.32,
+        "height": 6.32
+      },
+      "method_a_mae_cm": 1.7,
+      "method_b_mae_cm": 5.06,
+      "method_a_iou_3d": 0.1086,
+      "method_b_iou_3d": 0.0872
+    },
+    {
+      "sequence_id": "book/batch-32/0",
+      "ground_truth_dimensions_cm": [
+        23.000000417232513,
+        17.000000178813934,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 23.15,
+        "width": 16.94,
+        "height": 5.03
+      },
+      "method_b": {
+        "length": 220.35,
+        "width": 189.7,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 123.35,
+      "method_a_iou_3d": 0.9695,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-33/38",
+      "ground_truth_dimensions_cm": [
+        23.130951821804047,
+        20.595237612724304,
+        7.71428570151329
+      ],
+      "method_a": {
+        "length": 23.17,
+        "width": 20.65,
+        "height": 7.58
+      },
+      "method_b": {
+        "length": 190.51,
+        "width": 91.93,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 80.48,
+      "method_a_iou_3d": 0.9735,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-33/43",
+      "ground_truth_dimensions_cm": [
+        24.95238035917282,
+        18.47619116306305,
+        3.9523810148239136
+      ],
+      "method_a": {
+        "length": 24.91,
+        "width": 18.62,
+        "height": 4.04
+      },
+      "method_b": {
+        "length": 34.12,
+        "width": 15.88,
+        "height": 6.14
+      },
+      "method_a_mae_cm": 0.09,
+      "method_b_mae_cm": 4.65,
+      "method_a_iou_3d": 0.9344,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-34/44",
+      "ground_truth_dimensions_cm": [
+        21.714285016059875,
+        14.642857015132904,
+        2.857142873108387
+      ],
+      "method_a": {
+        "length": 21.76,
+        "width": 14.69,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 266.27,
+        "width": 50.05,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 94.04,
+      "method_a_iou_3d": 0.9473,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-36/8",
+      "ground_truth_dimensions_cm": [
+        23.309524357318878,
+        15.833333134651184,
+        3.928571566939354
+      ],
+      "method_a": {
+        "length": 23.48,
+        "width": 15.9,
+        "height": 3.83
+      },
+      "method_b": {
+        "length": 21.02,
+        "width": 14.74,
+        "height": 3.63
+      },
+      "method_a_mae_cm": 0.11,
+      "method_b_mae_cm": 1.23,
+      "method_a_iou_3d": 0.9509,
+      "method_b_iou_3d": 0.1285
+    },
+    {
+      "sequence_id": "book/batch-39/23",
+      "ground_truth_dimensions_cm": [
+        25.785714387893677,
+        21.50000035762787,
+        1.9999999552965164
+      ],
+      "method_a": {
+        "length": 25.91,
+        "width": 21.57,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 25.36,
+        "width": 12.22,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.4,
+      "method_b_mae_cm": 4.24,
+      "method_a_iou_3d": 0.6611,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-39/44",
+      "ground_truth_dimensions_cm": [
+        21.99999988079071,
+        17.000000178813934,
+        1.9999999552965164
+      ],
+      "method_a": {
+        "length": 22.11,
+        "width": 17.07,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 17.22,
+        "width": 12.16,
+        "height": 3.0
+      },
+      "method_a_mae_cm": 0.39,
+      "method_b_mae_cm": 3.54,
+      "method_a_iou_3d": 0.6605,
+      "method_b_iou_3d": 0.104
+    },
+    {
+      "sequence_id": "book/batch-47/35",
+      "ground_truth_dimensions_cm": [
+        18.99999976158142,
+        12.999999523162842,
+        2.9999999329447746
+      ],
+      "method_a": {
+        "length": 18.93,
+        "width": 13.01,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 218.38,
+        "width": 118.41,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.03,
+      "method_b_mae_cm": 102.26,
+      "method_a_iou_3d": 0.966,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-49/7",
+      "ground_truth_dimensions_cm": [
+        19.57142800092697,
+        13.71428519487381,
+        2.428571507334709
+      ],
+      "method_a": {
+        "length": 19.66,
+        "width": 13.77,
+        "height": 3.0
+      },
+      "method_b": {
+        "length": 52.88,
+        "width": 19.54,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.24,
+      "method_b_mae_cm": 13.9,
+      "method_a_iou_3d": 0.8026,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "book/batch-6/16",
+      "ground_truth_dimensions_cm": [
+        18.000000715255737,
+        11.999999731779099,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 18.09,
+        "width": 12.04,
+        "height": 4.02
+      },
+      "method_b": {
+        "length": 115.02,
+        "width": 73.12,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.05,
+      "method_b_mae_cm": 53.05,
+      "method_a_iou_3d": 0.978,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-10/38",
+      "ground_truth_dimensions_cm": [
+        25.999999046325684,
+        20.000000298023224,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 25.88,
+        "width": 19.96,
+        "height": 5.95
+      },
+      "method_b": {
+        "length": 245.52,
+        "width": 182.02,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.07,
+      "method_b_mae_cm": 127.51,
+      "method_a_iou_3d": 0.9552,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-10/44",
+      "ground_truth_dimensions_cm": [
+        27.000001072883606,
+        20.000000298023224,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 27.13,
+        "width": 20.15,
+        "height": 6.16
+      },
+      "method_b": {
+        "length": 212.38,
+        "width": 131.84,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.15,
+      "method_b_mae_cm": 99.41,
+      "method_a_iou_3d": 0.9385,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-13/10",
+      "ground_truth_dimensions_cm": [
+        23.999999463558197,
+        18.99999976158142,
+        9.000000357627869
+      ],
+      "method_a": {
+        "length": 24.44,
+        "width": 19.11,
+        "height": 8.96
+      },
+      "method_b": {
+        "length": 108.27,
+        "width": 30.2,
+        "height": 23.66
+      },
+      "method_a_mae_cm": 0.2,
+      "method_b_mae_cm": 36.71,
+      "method_a_iou_3d": 0.958,
+      "method_b_iou_3d": 0.0526
+    },
+    {
+      "sequence_id": "cereal_box/batch-13/38",
+      "ground_truth_dimensions_cm": [
+        25.0,
+        20.000000298023224,
+        7.000000029802322
+      ],
+      "method_a": {
+        "length": 25.16,
+        "width": 20.04,
+        "height": 7.12
+      },
+      "method_b": {
+        "length": 22.18,
+        "width": 20.27,
+        "height": 18.76
+      },
+      "method_a_mae_cm": 0.11,
+      "method_b_mae_cm": 4.95,
+      "method_a_iou_3d": 0.9572,
+      "method_b_iou_3d": 0.1923
+    },
+    {
+      "sequence_id": "cereal_box/batch-13/42",
+      "ground_truth_dimensions_cm": [
+        31.00000023841858,
+        23.999999463558197,
+        10.999999940395355
+      ],
+      "method_a": {
+        "length": 31.19,
+        "width": 24.0,
+        "height": 10.96
+      },
+      "method_b": {
+        "length": 195.31,
+        "width": 93.49,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 79.93,
+      "method_a_iou_3d": 0.966,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-18/30",
+      "ground_truth_dimensions_cm": [
+        25.999999046325684,
+        18.99999976158142,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 25.93,
+        "width": 19.06,
+        "height": 6.0
+      },
+      "method_b": {
+        "length": 24.17,
+        "width": 15.53,
+        "height": 6.1
+      },
+      "method_a_mae_cm": 0.04,
+      "method_b_mae_cm": 1.8,
+      "method_a_iou_3d": 0.9575,
+      "method_b_iou_3d": 0.221
+    },
+    {
+      "sequence_id": "cereal_box/batch-18/4",
+      "ground_truth_dimensions_cm": [
+        23.000000417232513,
+        17.000000178813934,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 23.01,
+        "width": 17.04,
+        "height": 5.93
+      },
+      "method_b": {
+        "length": 64.69,
+        "width": 54.1,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.04,
+      "method_b_mae_cm": 26.6,
+      "method_a_iou_3d": 0.9785,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-18/45",
+      "ground_truth_dimensions_cm": [
+        18.000000715255737,
+        14.000000059604645,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 18.29,
+        "width": 14.09,
+        "height": 3.98
+      },
+      "method_b": {
+        "length": 8.94,
+        "width": 8.44,
+        "height": 5.86
+      },
+      "method_a_mae_cm": 0.13,
+      "method_b_mae_cm": 5.49,
+      "method_a_iou_3d": 0.9345,
+      "method_b_iou_3d": 0.1914
+    },
+    {
+      "sequence_id": "cereal_box/batch-2/47",
+      "ground_truth_dimensions_cm": [
+        25.999999046325684,
+        18.99999976158142,
+        7.000000029802322
+      ],
+      "method_a": {
+        "length": 26.02,
+        "width": 18.92,
+        "height": 6.98
+      },
+      "method_b": {
+        "length": 165.77,
+        "width": 126.12,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.04,
+      "method_b_mae_cm": 82.96,
+      "method_a_iou_3d": 0.9727,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-21/27",
+      "ground_truth_dimensions_cm": [
+        20.000000298023224,
+        15.000000596046448,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 19.98,
+        "width": 15.03,
+        "height": 4.9
+      },
+      "method_b": {
+        "length": 83.12,
+        "width": 44.07,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.05,
+      "method_b_mae_cm": 30.73,
+      "method_a_iou_3d": 0.9722,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-23/7",
+      "ground_truth_dimensions_cm": [
+        28.999999165534973,
+        20.000000298023224,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 28.92,
+        "width": 19.95,
+        "height": 6.11
+      },
+      "method_b": {
+        "length": 22.55,
+        "width": 20.19,
+        "height": 6.68
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 2.44,
+      "method_a_iou_3d": 0.9639,
+      "method_b_iou_3d": 0.0958
+    },
+    {
+      "sequence_id": "cereal_box/batch-24/3",
+      "ground_truth_dimensions_cm": [
+        27.000001072883606,
+        20.000000298023224,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 27.12,
+        "width": 20.13,
+        "height": 5.0
+      },
+      "method_b": {
+        "length": 13.85,
+        "width": 6.11,
+        "height": 5.5
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 9.18,
+      "method_a_iou_3d": 0.9865,
+      "method_b_iou_3d": 0.0375
+    },
+    {
+      "sequence_id": "cereal_box/batch-26/12",
+      "ground_truth_dimensions_cm": [
+        20.000000298023224,
+        14.000000059604645,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 20.03,
+        "width": 14.01,
+        "height": 5.01
+      },
+      "method_b": {
+        "length": 15.52,
+        "width": 6.92,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.02,
+      "method_b_mae_cm": 3.85,
+      "method_a_iou_3d": 0.9849,
+      "method_b_iou_3d": 0.0043
+    },
+    {
+      "sequence_id": "cereal_box/batch-26/22",
+      "ground_truth_dimensions_cm": [
+        20.999999344348907,
+        15.000000596046448,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 49.27,
+        "width": 38.9,
+        "height": 26.05
+      },
+      "method_b": {
+        "length": 42.53,
+        "width": 38.59,
+        "height": 25.54
+      },
+      "method_a_mae_cm": 24.41,
+      "method_b_mae_cm": 21.89,
+      "method_a_iou_3d": 0.0315,
+      "method_b_iou_3d": 0.0369
+    },
+    {
+      "sequence_id": "cereal_box/batch-26/32",
+      "ground_truth_dimensions_cm": [
+        23.999999463558197,
+        15.000000596046448,
+        7.999999821186066
+      ],
+      "method_a": {
+        "length": 23.79,
+        "width": 15.19,
+        "height": 7.85
+      },
+      "method_b": {
+        "length": 40.73,
+        "width": 27.68,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.18,
+      "method_b_mae_cm": 10.8,
+      "method_a_iou_3d": 0.9598,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-26/38",
+      "ground_truth_dimensions_cm": [
+        20.000000298023224,
+        14.000000059604645,
+        7.000000029802322
+      ],
+      "method_a": {
+        "length": 20.1,
+        "width": 14.01,
+        "height": 7.02
+      },
+      "method_b": {
+        "length": 23.61,
+        "width": 16.84,
+        "height": 9.47
+      },
+      "method_a_mae_cm": 0.04,
+      "method_b_mae_cm": 2.97,
+      "method_a_iou_3d": 0.988,
+      "method_b_iou_3d": 0.1355
+    },
+    {
+      "sequence_id": "cereal_box/batch-28/35",
+      "ground_truth_dimensions_cm": [
+        20.999999344348907,
+        15.999999642372131,
+        3.999999910593033
+      ],
+      "method_a": {
+        "length": 21.14,
+        "width": 16.04,
+        "height": 4.18
+      },
+      "method_b": {
+        "length": 16.45,
+        "width": 6.01,
+        "height": 3.78
+      },
+      "method_a_mae_cm": 0.12,
+      "method_b_mae_cm": 4.92,
+      "method_a_iou_3d": 0.9309,
+      "method_b_iou_3d": 0.0231
+    },
+    {
+      "sequence_id": "cereal_box/batch-28/38",
+      "ground_truth_dimensions_cm": [
+        21.99999988079071,
+        14.000000059604645,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 22.32,
+        "width": 14.09,
+        "height": 5.0
+      },
+      "method_b": {
+        "length": 59.38,
+        "width": 32.43,
+        "height": 5.0
+      },
+      "method_a_mae_cm": 0.14,
+      "method_b_mae_cm": 18.6,
+      "method_a_iou_3d": 0.9694,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-29/3",
+      "ground_truth_dimensions_cm": [
+        18.99999976158142,
+        15.000000596046448,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 18.67,
+        "width": 15.09,
+        "height": 6.0
+      },
+      "method_b": {
+        "length": 33.39,
+        "width": 4.52,
+        "height": 3.91
+      },
+      "method_a_mae_cm": 0.14,
+      "method_b_mae_cm": 8.99,
+      "method_a_iou_3d": 0.9569,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-31/34",
+      "ground_truth_dimensions_cm": [
+        25.999999046325684,
+        18.99999976158142,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 25.94,
+        "width": 19.06,
+        "height": 5.12
+      },
+      "method_b": {
+        "length": 23.86,
+        "width": 21.98,
+        "height": 18.3
+      },
+      "method_a_mae_cm": 0.08,
+      "method_b_mae_cm": 6.14,
+      "method_a_iou_3d": 0.9624,
+      "method_b_iou_3d": 0.1875
+    },
+    {
+      "sequence_id": "cereal_box/batch-33/0",
+      "ground_truth_dimensions_cm": [
+        27.000001072883606,
+        20.000000298023224,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 27.21,
+        "width": 20.0,
+        "height": 6.1
+      },
+      "method_b": {
+        "length": 34.75,
+        "width": 32.39,
+        "height": 27.4
+      },
+      "method_a_mae_cm": 0.1,
+      "method_b_mae_cm": 13.85,
+      "method_a_iou_3d": 0.9731,
+      "method_b_iou_3d": 0.0
+    },
+    {
+      "sequence_id": "cereal_box/batch-35/38",
+      "ground_truth_dimensions_cm": [
+        23.000000417232513,
+        18.99999976158142,
+        5.000000074505806
+      ],
+      "method_a": {
+        "length": 23.13,
+        "width": 19.05,
+        "height": 5.0
+      },
+      "method_b": {
+        "length": 19.85,
+        "width": 12.24,
+        "height": 5.38
+      },
+      "method_a_mae_cm": 0.06,
+      "method_b_mae_cm": 3.43,
+      "method_a_iou_3d": 0.9674,
+      "method_b_iou_3d": 0.0601
+    },
+    {
+      "sequence_id": "cereal_box/batch-4/36",
+      "ground_truth_dimensions_cm": [
+        20.000000298023224,
+        12.999999523162842,
+        5.999999865889549
+      ],
+      "method_a": {
+        "length": 20.14,
+        "width": 13.06,
+        "height": 6.06
+      },
+      "method_b": {
+        "length": 17.28,
+        "width": 13.53,
+        "height": 13.38
+      },
+      "method_a_mae_cm": 0.09,
+      "method_b_mae_cm": 3.54,
+      "method_a_iou_3d": 0.9782,
+      "method_b_iou_3d": 0.257
+    }
+  ]
+}

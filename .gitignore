@@ -1,0 +1,13 @@
+﻿.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+BCS_Beginner_Video/
+Mythology_Reel_Video/
+Rupdighi_Meghaloy_Ep4/
+Village_Love_Story_Ep9/
+TrueDeed_*
+*.jpg
+*.png
+site_summary.txt
+*.html
