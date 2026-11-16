@@ -4,11 +4,17 @@ inspect the 3D wireframe reprojection, and evaluate volumetric-weight billing me
 """
 
 import os
+import sys
 import glob
 import json
 import cv2
 import numpy as np
 import streamlit as st
+
+# Ensure repository root is on sys.path for Streamlit Cloud deployment
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from box_dimensioning.calibration.camera_calibrator import CameraCalibrator
 from box_dimensioning.dataset.objectron_parser import load_sequence
