@@ -22,6 +22,7 @@ from box_dimensioning.dataset.objectron_parser import load_sequence
 from box_dimensioning.pipeline.dimensioner import BoxDimensioner
 from box_dimensioning.calibration.intrinsics_checker import draw_projected_box_wireframe
 from box_dimensioning.pipeline.custom_video_processor import process_custom_mobile_video
+from box_dimensioning.visualization.box_3d_renderer import create_interactive_3d_plotly_figure
 
 
 st.set_page_config(
@@ -152,6 +153,17 @@ with tab_live:
                         st.checkbox("A4: 3D IoU >= 0.50", value=(iou_3d >= 0.50), disabled=True)
                         st.checkbox("A7: Latency <= 2.0 s on CPU", value=(res["latency_seconds"] <= 2.0), disabled=True)
 
+                st.markdown("---")
+                st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")
+                fig_3d = create_interactive_3d_plotly_figure(
+                    length_cm=dim["length"],
+                    width_cm=dim["width"],
+                    height_cm=dim["height"],
+                    volumetric_weight_kg=vw,
+                    title=f"3D Parcel Reconstruction: {selected_seq_id}"
+                )
+                st.plotly_chart(fig_3d, use_container_width=True)
+
     else:
         # Custom Mobile Video Upload Mode
         st.subheader("📤 Upload Mobile Phone Parcel Video (.mp4 / .mov)")
@@ -215,6 +227,18 @@ with tab_live:
                         st.write(f"- **Blur Score (Laplacian):** {qf.get('blur_score', 0.0)} (Clean, unblurred)")
                         st.write(f"- **Frame Truncation:** No edges clipped")
                         st.write(f"- **Keyframes Selected:** Frames #{res['selected_frames'][0]} and #{res['selected_frames'][1]}")
+
+                    st.markdown("---")
+                    st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")
+                    st.caption("Click and drag with your mouse/touchscreen to rotate and inspect the 3D parcel in full 360° perspective.")
+                    fig_custom_3d = create_interactive_3d_plotly_figure(
+                        length_cm=dim["length"],
+                        width_cm=dim["width"],
+                        height_cm=dim["height"],
+                        volumetric_weight_kg=vw,
+                        title="Custom Video: 3D Reconstructed Parcel Model"
+                    )
+                    st.plotly_chart(fig_custom_3d, use_container_width=True)
 
 with tab_calib:
     st.subheader("OpenCV Chessboard Camera Calibration (F1, A1)")

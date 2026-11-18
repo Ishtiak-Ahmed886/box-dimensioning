@@ -239,7 +239,7 @@ def process_custom_mobile_video(
         pts2_m = corners2[:n_match]
         triangulated = triangulate_custom_rays(pts1_m, pts2_m, K, R, t)
 
-    # Step 7: Estimate Dimensions from 3D cloud or perspective bounding box
+    # Step 7: Estimate Dimensions & 3D Center/Pose from 3D cloud or perspective bounding box
     if len(triangulated) >= 4:
         center_3d = np.median(triangulated, axis=0)
         u, s, vh = np.linalg.svd(triangulated - center_3d, full_matrices=False)
@@ -255,11 +255,28 @@ def process_custom_mobile_video(
     else:
         # Monocular depth scaling fallback using GrabCut bounding box
         rect = c1_res.get("bounding_box", (w // 4, h // 4, w // 2, h // 2))
+        cx_box = rect[0] + rect[2] / 2.0
+        cy_box = rect[1] + rect[3] / 2.0
         box_w_px = rect[2]
         box_h_px = rect[3]
         f_px = K[0, 0]
         # Assume typical courier parcel scanning distance ~ 0.55m
         est_dist_m = 0.55
+        center_3d = np.array([
+            (cx_box - K[0, 2]) * est_dist_m / K[0, 0],
+            (cy_box - K[1, 2]) * est_dist_m / K[1, 1],
+            est_dist_m
+        ], dtype=np.float64)
+
+        # Realistic 15-degree perspective tilt so top, front, and side 3D faces are visible
+        cos_t = np.cos(np.deg2rad(15))
+        sin_t = np.sin(np.deg2rad(15))
+        rot_box = np.array([
+            [cos_t, 0.0, sin_t],
+            [sin_t * 0.3, cos_t, -cos_t * 0.3],
+            [-sin_t, 0.3, cos_t]
+        ], dtype=np.float64)
+
         est_w_cm = (box_w_px * est_dist_m / f_px) * 100.0
         est_h_cm = (box_h_px * est_dist_m / f_px) * 100.0
         est_d_cm = est_w_cm * 0.75
@@ -270,26 +287,19 @@ def process_custom_mobile_video(
     height = float(np.clip(dims[2], 2.0, 80.0))
     vol_weight = compute_volumetric_weight(length, width, height)
 
-    # Step 8: Render 3D Wireframe Overlay onto Keyframe Image
-    annotated = img1.copy()
-    font = cv2.FONT_HERSHEY_SIMPLEX
+    # Step 8: Render True 3D Wireframe & Shaded Cuboid Faces onto Keyframe Image
+    from box_dimensioning.visualization.box_3d_renderer import render_true_3d_wireframe_hud
 
-    # Draw detected corners and contour
-    if len(corners1) >= 4:
-        hull = cv2.convexHull(corners1.astype(np.int32))
-        cv2.polylines(annotated, [hull], True, (0, 255, 0), 3, cv2.LINE_AA)
-        for pt in corners1:
-            cv2.circle(annotated, (int(pt[0]), int(pt[1])), 6, (0, 0, 255), -1)
-
-    # Draw courier measurement HUD
-    cv2.rectangle(annotated, (20, 20), (550, 170), (0, 0, 0), -1)
-    cv2.rectangle(annotated, (20, 20), (550, 170), (0, 255, 0), 2)
-    cv2.putText(annotated, "CUSTOM MOBILE VIDEO INTAKE", (30, 50), font, 0.75, (0, 255, 0), 2)
-    cv2.putText(annotated, f"Length: {length:.1f} cm", (30, 80), font, 0.65, (255, 255, 255), 2)
-    cv2.putText(annotated, f"Width:  {width:.1f} cm", (200, 80), font, 0.65, (255, 255, 255), 2)
-    cv2.putText(annotated, f"Height: {height:.1f} cm", (370, 80), font, 0.65, (255, 255, 255), 2)
-    cv2.putText(annotated, f"Volumetric Weight: {vol_weight:.3f} kg", (30, 115), font, 0.70, (0, 255, 255), 2)
-    cv2.putText(annotated, f"Keyframes: #{idx1} & #{idx2} | Sharpness: {blur_score:.1f}", (30, 150), font, 0.50, (180, 180, 180), 1)
+    annotated = render_true_3d_wireframe_hud(
+        image=img1,
+        center_3d=center_3d,
+        rot_3d=rot_box,
+        length_cm=length,
+        width_cm=width,
+        height_cm=height,
+        K=K,
+        volumetric_weight_kg=vol_weight
+    )
 
     latency = round(time.perf_counter() - t_start, 3)
 
@@ -311,6 +321,8 @@ def process_custom_mobile_video(
         "selected_frames": [int(idx1), int(idx2)],
         "latency_seconds": latency,
         "annotated_image": annotated,
+        "center_3d": center_3d,
+        "rot_box": rot_box,
         "raw_frame_1": img1,
         "raw_frame_2": img2
     }
