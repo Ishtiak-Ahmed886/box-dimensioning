@@ -177,7 +177,8 @@ def process_custom_mobile_video(
     Returns: Complete measurement dictionary with HUD-rendered frame.
     """
     t_start = time.perf_counter()
-    q_gate = quality_gate or QualityGate()
+    # For custom mobile video, use a relaxed blur threshold (15.0) suitable for phone video compression
+    q_gate = quality_gate or QualityGate(blur_threshold=15.0)
     seg = segmenter or ClassicalBoxSegmenter()
     deep_detector = DeepBoxDetector(use_deep=use_deep_detector)
 

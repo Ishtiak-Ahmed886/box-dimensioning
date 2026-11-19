@@ -234,74 +234,75 @@ with tab_live:
                 if res is not None:
                     if res.get("status") == "REJECTED":
                         st.error(f"❌ Frame Rejected by Quality Gate! Reason: {res.get('reason_code')}")
+                        st.info("💡 Tip: Try recording in better lighting, hold phone steady without shaking, and ensure the entire package is visible.")
                     else:
                         col_hud, col_stats = st.columns([3, 2])
 
-                    with col_hud:
-                        st.subheader("📸 Camera Keyframe with 3D Wireframe HUD")
-                        annotated = res.get("annotated_image")
-                        if annotated is not None:
-                            img_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-                            st.image(img_rgb, use_container_width=True)
+                        with col_hud:
+                            st.subheader("📸 Camera Keyframe with 3D Wireframe HUD")
+                            annotated = res.get("annotated_image")
+                            if annotated is not None:
+                                img_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+                                st.image(img_rgb, use_container_width=True)
 
-                    with col_stats:
-                        st.subheader("📋 Billing & Measurement Results")
-                        st.success("✅ Package Detected & Dimensioned Successfully!")
+                        with col_stats:
+                            st.subheader("📋 Billing & Measurement Results")
+                            st.success("✅ Package Detected & Dimensioned Successfully!")
 
-                        dim = res["dimensions_cm"]
-                        vw = res["volumetric_weight_kg"]
+                            dim = res["dimensions_cm"]
+                            vw = res["volumetric_weight_kg"]
 
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("Length", f"{dim['length']:.1f} cm")
-                        m2.metric("Width", f"{dim['width']:.1f} cm")
-                        m3.metric("Height", f"{dim['height']:.1f} cm")
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric("Length", f"{dim['length']:.1f} cm")
+                            m2.metric("Width", f"{dim['width']:.1f} cm")
+                            m3.metric("Height", f"{dim['height']:.1f} cm")
 
-                        st.metric("Volumetric Weight", f"{vw:.3f} kg", help="L * W * H / 5000")
-                        st.caption(f"⚡ Processing Latency: {res['latency_seconds']:.3f} s")
+                            st.metric("Volumetric Weight", f"{vw:.3f} kg", help="L * W * H / 5000")
+                            st.caption(f"⚡ Processing Latency: {res['latency_seconds']:.3f} s")
+
+                            st.markdown("---")
+                            st.markdown("### 🛡️ Quality Gate Audit")
+                            qf = res.get("quality_flags", {})
+                            st.write(f"- **Blur Score (Laplacian):** {qf.get('blur_score', 0.0)} (Clean, unblurred)")
+                            st.write(f"- **Frame Truncation:** No edges clipped")
+                            st.write(f"- **Keyframes Selected:** Frames #{res['selected_frames'][0]} and #{res['selected_frames'][1]}")
+
+                            # ── Improvement metadata ──────────────────────────────
+                            st.markdown("---")
+                            st.markdown("### 🔬 Pipeline Improvements")
+
+                            # Step 2: Intrinsics info
+                            intr = res.get("intrinsics_info", {})
+                            intr_source = intr.get("source", "unknown")
+                            hfov = intr.get("hfov_deg", "N/A")
+                            intr_badge = {"exif_35mm_focal": "🟢 EXIF", "phone_database": "🟡 Phone DB", "heuristic_fov": "🟠 Heuristic"}.get(intr_source, "⚪ Unknown")
+                            st.write(f"- **Step 2 — Calibration:** {intr_badge} | HFOV = {hfov:.1f}°" if isinstance(hfov, float) else f"- **Step 2 — Calibration:** {intr_badge}")
+
+                            # Step 3: Detection method
+                            det_method = res.get("detection_method", "unknown")
+                            det_badge = "🟢 YOLOv8" if "yolo" in det_method else "🟡 Hough Lines (Classical)"
+                            st.write(f"- **Step 3 — Box Detection:** {det_badge}")
+
+                            # Step 4: Scale anchor
+                            sa = res.get("scale_anchor", {})
+                            if sa.get("anchor_detected"):
+                                st.write(f"- **Step 4 — Scale Anchor:** 🟢 Detected ({sa['reference_object']}) | {sa['scale_mm_per_px']:.4f} mm/px")
+                            elif sa.get("reference_object"):
+                                st.write(f"- **Step 4 — Scale Anchor:** 🔴 Reference not found — using monocular fallback")
+                            else:
+                                st.write(f"- **Step 4 — Scale Anchor:** 🟠 No reference → monocular depth fallback")
 
                         st.markdown("---")
-                        st.markdown("### 🛡️ Quality Gate Audit")
-                        qf = res.get("quality_flags", {})
-                        st.write(f"- **Blur Score (Laplacian):** {qf.get('blur_score', 0.0)} (Clean, unblurred)")
-                        st.write(f"- **Frame Truncation:** No edges clipped")
-                        st.write(f"- **Keyframes Selected:** Frames #{res['selected_frames'][0]} and #{res['selected_frames'][1]}")
-
-                        # ── Improvement metadata ──────────────────────────────
-                        st.markdown("---")
-                        st.markdown("### 🔬 Pipeline Improvements")
-
-                        # Step 2: Intrinsics info
-                        intr = res.get("intrinsics_info", {})
-                        intr_source = intr.get("source", "unknown")
-                        hfov = intr.get("hfov_deg", "N/A")
-                        intr_badge = {"exif_35mm_focal": "🟢 EXIF", "phone_database": "🟡 Phone DB", "heuristic_fov": "🟠 Heuristic"}.get(intr_source, "⚪ Unknown")
-                        st.write(f"- **Step 2 — Calibration:** {intr_badge} | HFOV = {hfov:.1f}°" if isinstance(hfov, float) else f"- **Step 2 — Calibration:** {intr_badge}")
-
-                        # Step 3: Detection method
-                        det_method = res.get("detection_method", "unknown")
-                        det_badge = "🟢 YOLOv8" if "yolo" in det_method else "🟡 Hough Lines (Classical)"
-                        st.write(f"- **Step 3 — Box Detection:** {det_badge}")
-
-                        # Step 4: Scale anchor
-                        sa = res.get("scale_anchor", {})
-                        if sa.get("anchor_detected"):
-                            st.write(f"- **Step 4 — Scale Anchor:** 🟢 Detected ({sa['reference_object']}) | {sa['scale_mm_per_px']:.4f} mm/px")
-                        elif sa.get("reference_object"):
-                            st.write(f"- **Step 4 — Scale Anchor:** 🔴 Reference not found — using monocular fallback")
-                        else:
-                            st.write(f"- **Step 4 — Scale Anchor:** 🟠 No reference → monocular depth fallback")
-
-                    st.markdown("---")
-                    st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")
-                    st.caption("Click and drag with your mouse/touchscreen to rotate and inspect the 3D parcel in full 360° perspective.")
-                    fig_custom_3d = create_interactive_3d_plotly_figure(
-                        length_cm=dim["length"],
-                        width_cm=dim["width"],
-                        height_cm=dim["height"],
-                        volumetric_weight_kg=vw,
-                        title="Custom Video: 3D Reconstructed Parcel Model"
-                    )
-                    st.plotly_chart(fig_custom_3d, use_container_width=True)
+                        st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")
+                        st.caption("Click and drag with your mouse/touchscreen to rotate and inspect the 3D parcel in full 360° perspective.")
+                        fig_custom_3d = create_interactive_3d_plotly_figure(
+                            length_cm=dim["length"],
+                            width_cm=dim["width"],
+                            height_cm=dim["height"],
+                            volumetric_weight_kg=vw,
+                            title="Custom Video: 3D Reconstructed Parcel Model"
+                        )
+                        st.plotly_chart(fig_custom_3d, use_container_width=True)
 
 with tab_calib:
     st.subheader("OpenCV Chessboard Camera Calibration (F1, A1)")
