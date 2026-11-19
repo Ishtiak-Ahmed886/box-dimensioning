@@ -192,70 +192,74 @@ class DeepBoxDetector:
             return None
 
     def _detect_classical_improved(self, image: np.ndarray) -> Dict:
-        """Improved classical: bilateral + adaptive Canny + Hough line intersections."""
+        """Improved classical: bilateral + adaptive Canny + Hough line intersections.
+        Completely bulletproof with fallback bounding box if any vision step fails.
+        """
         h, w = image.shape[:2]
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
-
-        # Step 1: Bilateral filter (edge-preserving noise removal)
-        filtered = cv2.bilateralFilter(gray, 9, 75, 75)
-
-        # Step 2: Adaptive Canny
-        v = np.median(filtered)
-        edges = cv2.Canny(filtered, int(max(0, 0.67 * v)), int(min(255, 1.33 * v)))
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
-
-        # Step 3: Hough line detection
-        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=60,
-                                 minLineLength=min(w, h) * 0.08, maxLineGap=20)
-
-        corners = np.empty((0, 2), dtype=np.float32)
+        corners = self._bbox_to_corners(w // 6, h // 6, 5 * w // 6, 5 * h // 6)
         bbox = (w // 6, h // 6, 2 * w // 3, 2 * h // 3)
 
-        if lines is not None and len(lines) >= 4:
-            # Compute intersection points of line pairs
-            intersections = []
-            segs = lines.reshape(-1, 4)  # safely handles (N, 1, 4) and (N, 4)
-            for i in range(len(segs)):
-                for j in range(i + 1, min(len(segs), i + 15)):
-                    pt = self._line_intersection(segs[i], segs[j])
-                    if pt is not None:
-                        x, y = pt
-                        if 0 <= x <= w and 0 <= y <= h:
-                            intersections.append([x, y])
+        try:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
 
-            if len(intersections) >= 4:
+            # Step 1: Bilateral filter (edge-preserving noise removal)
+            filtered = cv2.bilateralFilter(gray, 9, 75, 75)
+
+            # Step 2: Adaptive Canny
+            v = float(np.median(filtered))
+            edges = cv2.Canny(filtered, int(max(0, 0.67 * v)), int(min(255, 1.33 * v)))
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+            # Step 3: Hough line detection
+            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=60,
+                                     minLineLength=int(min(w, h) * 0.08), maxLineGap=20)
+
+            found_corners = False
+            if lines is not None:
                 try:
-                    pts = np.array(intersections, dtype=np.float32)
-                    # Cluster with K-means to find distinct corners
-                    n_clusters = min(8, len(pts))
-                    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-                    _, labels, centers = cv2.kmeans(
-                        pts, n_clusters, None, criteria, 5, cv2.KMEANS_PP_CENTERS
-                    )
-                    corners = centers.astype(np.float32)
-                    xs = centers[:, 0]; ys = centers[:, 1]
-                    bbox = (int(xs.min()), int(ys.min()),
-                            int(xs.max() - xs.min()), int(ys.max() - ys.min()))
+                    segs = np.asarray(lines, dtype=np.float32).reshape(-1, 4)
+                    if len(segs) >= 4:
+                        intersections = []
+                        n_segs = len(segs)
+                        for i in range(n_segs):
+                            for j in range(i + 1, min(n_segs, i + 15)):
+                                pt = self._line_intersection(segs[i], segs[j])
+                                if pt is not None:
+                                    x_pt, y_pt = pt
+                                    if 0 <= x_pt <= w and 0 <= y_pt <= h:
+                                        intersections.append([x_pt, y_pt])
+
+                        if len(intersections) >= 4:
+                            pts = np.array(intersections, dtype=np.float32)
+                            n_clusters = min(8, len(pts))
+                            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+                            _, _, centers = cv2.kmeans(
+                                pts, n_clusters, None, criteria, 5, cv2.KMEANS_PP_CENTERS
+                            )
+                            corners = centers.astype(np.float32)
+                            xs = centers[:, 0]; ys = centers[:, 1]
+                            bbox = (int(xs.min()), int(ys.min()),
+                                    int(max(10, xs.max() - xs.min())), int(max(10, ys.max() - ys.min())))
+                            found_corners = True
                 except Exception:
                     pass
-        
-        # Fallback: largest contour
-        if len(corners) < 4:
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours:
-                cnt = max(contours, key=cv2.contourArea)
-                peri = cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, 0.025 * peri, True)
-                if len(approx) >= 4:
-                    corners = approx.reshape(-1, 2).astype(np.float32)
+
+            # Step 4: Contour fallback if Hough corners were insufficient
+            if not found_corners:
+                contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    cnt = max(contours, key=cv2.contourArea)
+                    peri = cv2.arcLength(cnt, True)
+                    approx = cv2.approxPolyDP(cnt, 0.025 * peri, True)
+                    if len(approx) >= 4:
+                        corners = approx.reshape(-1, 2).astype(np.float32)
                     rect = cv2.boundingRect(cnt)
                     x, y, bw, bh = rect
-                    bbox = (x, y, bw, bh)
+                    bbox = (int(x), int(y), int(bw), int(bh))
 
-        if len(corners) < 4:
-            corners = self._bbox_to_corners(w//6, h//6, 5*w//6, 5*h//6)
-            bbox = (w//6, h//6, 2*w//3, 2*h//3)
+        except Exception as e:
+            print(f"[DeepBoxDetector] Classical fallback caught error: {e}")
 
         x, y, bw, bh = bbox
         return {

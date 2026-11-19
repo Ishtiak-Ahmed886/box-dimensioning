@@ -217,20 +217,25 @@ with tab_live:
             st.video(temp_vid_path)
 
             if st.button("🚀 Measure Uploaded Package Live", type="primary", key="btn_measure_upload"):
+                res = None
                 with st.spinner("Extracting sharp keyframes, solving camera motion, and fitting 3D cuboid..."):
-                    res = process_custom_mobile_video(
-                        video_path=temp_vid_path,
-                        baseline_cm=est_baseline,
-                        reference_object=ref_object,
-                        phone_make=phone_make,
-                        phone_model=phone_model,
-                        use_deep_detector=use_deep,
-                    )
+                    try:
+                        res = process_custom_mobile_video(
+                            video_path=temp_vid_path,
+                            baseline_cm=est_baseline,
+                            reference_object=ref_object,
+                            phone_make=phone_make,
+                            phone_model=phone_model,
+                            use_deep_detector=use_deep,
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Error processing video: {e}. Please ensure the video is clear and contains a box.")
 
-                if res.get("status") == "REJECTED":
-                    st.error(f"❌ Frame Rejected by Quality Gate! Reason: {res.get('reason_code')}")
-                else:
-                    col_hud, col_stats = st.columns([3, 2])
+                if res is not None:
+                    if res.get("status") == "REJECTED":
+                        st.error(f"❌ Frame Rejected by Quality Gate! Reason: {res.get('reason_code')}")
+                    else:
+                        col_hud, col_stats = st.columns([3, 2])
 
                     with col_hud:
                         st.subheader("📸 Camera Keyframe with 3D Wireframe HUD")
