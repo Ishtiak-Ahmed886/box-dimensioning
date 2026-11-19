@@ -173,6 +173,7 @@ def process_custom_mobile_video(
     phone_model: Optional[str] = None,         # e.g. "SM-S911"
     use_deep_detector: bool = True,
     strict_quality_gate: bool = False,
+    **kwargs
 ) -> Dict:
     """Processes an uploaded mobile video, recovers geometry, and calculates volumetric weight.
     Returns: Complete measurement dictionary with HUD-rendered frame.

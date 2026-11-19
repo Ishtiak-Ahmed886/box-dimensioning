@@ -220,7 +220,10 @@ with tab_live:
                 res = None
                 with st.spinner("Extracting sharp keyframes, solving camera motion, and fitting 3D cuboid..."):
                     try:
-                        res = process_custom_mobile_video(
+                        import importlib
+                        import box_dimensioning.pipeline.custom_video_processor as cvp
+                        importlib.reload(cvp)
+                        res = cvp.process_custom_mobile_video(
                             video_path=temp_vid_path,
                             baseline_cm=est_baseline,
                             reference_object=ref_object,
