@@ -178,6 +178,35 @@ with tab_live:
         with col_up2:
             est_baseline = st.slider("Estimated Camera Swipe (Baseline cm):", 5.0, 30.0, 12.0, help="Horizontal swipe distance of your phone in cm")
 
+        # ── NEW: 3 Upgrade Controls ──────────────────────────────────────────
+        st.markdown("#### ⚙️ Advanced Pipeline Settings")
+        col_a, col_b, col_c = st.columns(3)
+
+        with col_a:
+            st.markdown("**📐 Scale Reference Object**")
+            st.caption("Place next to box in video to fix scale")
+            use_ref = st.checkbox("Enable Scale Anchor", value=False, key="use_ref")
+            ref_object = None
+            if use_ref:
+                ref_object = st.selectbox(
+                    "Reference Object:",
+                    ["A4 Paper", "A5 Paper", "Letter Paper", "Credit Card", "Business Card"],
+                    index=0,
+                    key="ref_object"
+                )
+
+        with col_b:
+            st.markdown("**📱 Phone Model (Optional)**")
+            st.caption("Improves focal length estimation")
+            phone_make = st.text_input("Make (e.g. Samsung)", value="", key="phone_make").strip() or None
+            phone_model = st.text_input("Model (e.g. SM-S911)", value="", key="phone_model").strip() or None
+
+        with col_c:
+            st.markdown("**🤖 Detection Engine**")
+            st.caption("YOLOv8 deep or classical fallback")
+            use_deep = st.toggle("Use YOLOv8 Deep Detector", value=True, key="use_deep")
+            st.caption("⚠️ First run downloads ~6 MB model" if use_deep else "Using improved Hough-line classical")
+
         if uploaded_file is not None:
             # Save uploaded video to data/uploads
             os.makedirs("data/uploads", exist_ok=True)
@@ -192,6 +221,10 @@ with tab_live:
                     res = process_custom_mobile_video(
                         video_path=temp_vid_path,
                         baseline_cm=est_baseline,
+                        reference_object=ref_object,
+                        phone_make=phone_make,
+                        phone_model=phone_model,
+                        use_deep_detector=use_deep,
                     )
 
                 if res.get("status") == "REJECTED":
@@ -227,6 +260,31 @@ with tab_live:
                         st.write(f"- **Blur Score (Laplacian):** {qf.get('blur_score', 0.0)} (Clean, unblurred)")
                         st.write(f"- **Frame Truncation:** No edges clipped")
                         st.write(f"- **Keyframes Selected:** Frames #{res['selected_frames'][0]} and #{res['selected_frames'][1]}")
+
+                        # ── Improvement metadata ──────────────────────────────
+                        st.markdown("---")
+                        st.markdown("### 🔬 Pipeline Improvements")
+
+                        # Step 2: Intrinsics info
+                        intr = res.get("intrinsics_info", {})
+                        intr_source = intr.get("source", "unknown")
+                        hfov = intr.get("hfov_deg", "N/A")
+                        intr_badge = {"exif_35mm_focal": "🟢 EXIF", "phone_database": "🟡 Phone DB", "heuristic_fov": "🟠 Heuristic"}.get(intr_source, "⚪ Unknown")
+                        st.write(f"- **Step 2 — Calibration:** {intr_badge} | HFOV = {hfov:.1f}°" if isinstance(hfov, float) else f"- **Step 2 — Calibration:** {intr_badge}")
+
+                        # Step 3: Detection method
+                        det_method = res.get("detection_method", "unknown")
+                        det_badge = "🟢 YOLOv8" if "yolo" in det_method else "🟡 Hough Lines (Classical)"
+                        st.write(f"- **Step 3 — Box Detection:** {det_badge}")
+
+                        # Step 4: Scale anchor
+                        sa = res.get("scale_anchor", {})
+                        if sa.get("anchor_detected"):
+                            st.write(f"- **Step 4 — Scale Anchor:** 🟢 Detected ({sa['reference_object']}) | {sa['scale_mm_per_px']:.4f} mm/px")
+                        elif sa.get("reference_object"):
+                            st.write(f"- **Step 4 — Scale Anchor:** 🔴 Reference not found — using monocular fallback")
+                        else:
+                            st.write(f"- **Step 4 — Scale Anchor:** 🟠 No reference → monocular depth fallback")
 
                     st.markdown("---")
                     st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")

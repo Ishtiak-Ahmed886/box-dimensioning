@@ -3,6 +3,11 @@ Enables couriers and users to upload raw phone videos (.mp4, .mov),
 automatically extracts keyframes with optimal baseline and sharpness,
 reconstructs 3D box geometry via structure-from-motion / DLT triangulation,
 and computes volumetric weight for billing.
+
+Improvements (v2):
+- Step 2: Smart intrinsics (EXIF → phone DB → heuristic) + radial undistortion
+- Step 3: Deep detector (YOLOv8-nano ONNX → Hough-line classical fallback)
+- Step 4: Scale anchor (A4/credit card reference object removes scale ambiguity)
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -13,7 +18,15 @@ import numpy as np
 
 from box_dimensioning.dataset.box_geometry import Box, compute_volumetric_weight
 from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
+from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
 from box_dimensioning.pipeline.quality_gate import QualityGate, QualityReport
+from box_dimensioning.pipeline.scale_anchor import (
+    compute_absolute_scale, scale_dimensions_to_cm, draw_reference_overlay,
+    detect_reference_rectangle, REFERENCE_OBJECTS
+)
+from box_dimensioning.calibration.smart_intrinsics import (
+    estimate_intrinsics_smart, apply_radial_undistort
+)
 from box_dimensioning.calibration.intrinsics_checker import draw_projected_box_wireframe
 
 
@@ -154,7 +167,11 @@ def process_custom_mobile_video(
     video_path: str,
     baseline_cm: float = 12.0,
     quality_gate: Optional[QualityGate] = None,
-    segmenter: Optional[ClassicalBoxSegmenter] = None
+    segmenter: Optional[ClassicalBoxSegmenter] = None,
+    reference_object: Optional[str] = None,   # e.g. "A4 Paper", "Credit Card"
+    phone_make: Optional[str] = None,          # e.g. "Samsung"
+    phone_model: Optional[str] = None,         # e.g. "SM-S911"
+    use_deep_detector: bool = True,
 ) -> Dict:
     """Processes an uploaded mobile video, recovers geometry, and calculates volumetric weight.
     Returns: Complete measurement dictionary with HUD-rendered frame.
@@ -162,6 +179,7 @@ def process_custom_mobile_video(
     t_start = time.perf_counter()
     q_gate = quality_gate or QualityGate()
     seg = segmenter or ClassicalBoxSegmenter()
+    deep_detector = DeepBoxDetector(use_deep=use_deep_detector)
 
     # Step 1: Extract frames from video
     indexed_frames = extract_video_frames(video_path, max_frames=50)
@@ -179,14 +197,33 @@ def process_custom_mobile_video(
     idx1, idx2, img1, img2, blur_score = select_best_keyframe_pair(indexed_frames, q_gate)
     h, w = img1.shape[:2]
 
-    # Step 3: Estimate camera intrinsics
-    K = estimate_phone_intrinsics(w, h)
+    # ── UPGRADE 1: Smart Camera Intrinsics ──────────────────────────────────
+    # Try to read EXIF from first video frame saved as JPEG bytes
+    frame_bytes: Optional[bytes] = None
+    try:
+        is_ok, buf = cv2.imencode('.jpg', img1, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        if is_ok:
+            frame_bytes = buf.tobytes()
+    except Exception:
+        pass
 
-    # Step 4: Corner detection on both frames
-    c1_res = seg.detect_corners(img1)
-    c2_res = seg.detect_corners(img2)
+    K, intrinsics_info = estimate_intrinsics_smart(
+        width=w, height=h,
+        image_bytes=frame_bytes,
+        make=phone_make,
+        model=phone_model,
+    )
+    # Apply radial undistortion (barrel correction for wide-angle phone lens)
+    img1 = apply_radial_undistort(img1, K)
+    img2 = apply_radial_undistort(img2, K)
+
+    # ── UPGRADE 2: Deep Box Detection ───────────────────────────────────────
+    # Use YOLOv8-nano ONNX for primary detection; Hough-line classical as fallback
+    c1_res = deep_detector.detect(img1)
+    c2_res = deep_detector.detect(img2)
     corners1 = c1_res.get("corners_2d", np.empty((0, 2)))
     corners2 = c2_res.get("corners_2d", np.empty((0, 2)))
+    detection_method = c1_res.get("method", "unknown")
 
     # Quality Gate checks
     q_report = q_gate.validate_frame(img1, corners1, w, h)
@@ -204,6 +241,15 @@ def process_custom_mobile_video(
             "volumetric_weight_kg": 0.0,
             "latency_seconds": round(time.perf_counter() - t_start, 3),
         }
+
+    # ── UPGRADE 3: Scale Anchor ──────────────────────────────────────────────
+    # Detect reference object (A4, credit card, etc.) to resolve scale ambiguity
+    scale_mm_per_px: Optional[float] = None
+    ref_detection = None
+    if reference_object and reference_object in REFERENCE_OBJECTS:
+        ref_detection = detect_reference_rectangle(img1, ref_name=reference_object)
+        if ref_detection is not None:
+            scale_mm_per_px = ref_detection["scale_mm_per_px"]
 
     # Step 5: SIFT / Feature Matching for camera motion estimation
     sift = cv2.SIFT_create(nfeatures=800)
@@ -282,9 +328,14 @@ def process_custom_mobile_video(
         est_d_cm = est_w_cm * 0.75
         dims = sorted([est_w_cm, est_h_cm, est_d_cm], reverse=True)
 
-    length = float(np.clip(dims[0], 5.0, 150.0))
-    width = float(np.clip(dims[1], 4.0, 100.0))
-    height = float(np.clip(dims[2], 2.0, 80.0))
+    # Apply scale anchor if available, otherwise use raw dims
+    raw_tuple = (float(dims[0]), float(dims[1]), float(dims[2]))
+    length, width, height = scale_dimensions_to_cm(
+        raw_dims=raw_tuple,
+        scale_mm_per_px=scale_mm_per_px,
+        fallback_distance_m=0.55,
+        focal_length_px=float(K[0, 0]),
+    )
     vol_weight = compute_volumetric_weight(length, width, height)
 
     # Step 8: Render True 3D Wireframe & Shaded Cuboid Faces onto Keyframe Image
@@ -300,6 +351,10 @@ def process_custom_mobile_video(
         K=K,
         volumetric_weight_kg=vol_weight
     )
+
+    # Draw reference overlay if detected
+    if ref_detection is not None:
+        annotated = draw_reference_overlay(annotated, ref_detection)
 
     latency = round(time.perf_counter() - t_start, 3)
 
@@ -324,5 +379,13 @@ def process_custom_mobile_video(
         "center_3d": center_3d,
         "rot_box": rot_box,
         "raw_frame_1": img1,
-        "raw_frame_2": img2
+        "raw_frame_2": img2,
+        # Improvement metadata
+        "intrinsics_info": intrinsics_info,
+        "detection_method": detection_method,
+        "scale_anchor": {
+            "reference_object": reference_object,
+            "scale_mm_per_px": round(scale_mm_per_px, 4) if scale_mm_per_px else None,
+            "anchor_detected": ref_detection is not None,
+        },
     }
