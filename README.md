@@ -1,194 +1,208 @@
-﻿# 📦 Parcel Dimensioning & Volumetric-Weight Billing from Phone Video
+﻿<div align="center">
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ishtiak-ahmed886-box-dimensi-box-dimensioningapplive-app-al7bqt.streamlit.app/)
-[![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?logo=opencv&logoColor=white)](https://opencv.org/)
-[![Tests](https://img.shields.io/badge/Tests-10%2F10%20Passed-brightgreen?logo=pytest&logoColor=white)]()
-[![Objectron](https://img.shields.io/badge/Dataset-Google%20Objectron-4285F4?logo=google&logoColor=white)](https://github.com/google-research-datasets/Objectron)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=200&section=header&text=Box%20Dimensioner&fontSize=52&fontColor=fff&animation=twinkling&fontAlignY=36&desc=Measure%20any%20parcel%20with%20your%20phone%20camera%20%F0%9F%93%A6&descAlignY=58&descSize=18" width="100%"/>
 
-> **Live Cloud Dashboard:** [**https://ishtiak-ahmed886-box-dimensi-box-dimensioningapplive-app-al7bqt.streamlit.app/**](https://ishtiak-ahmed886-box-dimensi-box-dimensioningapplive-app-al7bqt.streamlit.app/)
+<br/>
 
----
+[![Live App](https://img.shields.io/badge/🚀%20Live%20Demo-Streamlit%20Cloud-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://ishtiak-ahmed886-box-dimensi-box-dimensioningapplive-app-al7bqt.streamlit.app/)
+[![Tests](https://img.shields.io/badge/✅%20Tests-10%2F10%20Passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white)]()
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge)](LICENSE)
 
-## 🚀 Industry Context & Problem Statement
+<br/>
 
-Couriers and e-commerce logistics companies bill parcels by the greater of **actual weight** and **volumetric weight**:
+[![YOLOv8](https://img.shields.io/badge/YOLOv8-nano%20ONNX-00BFFF?style=flat-square&logo=pytorch&logoColor=white)]()
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-5C3EE8?style=flat-square&logo=opencv&logoColor=white)](https://opencv.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-PWA%20Backend-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Plotly](https://img.shields.io/badge/Plotly-3D%20WebGL-3F4F75?style=flat-square&logo=plotly&logoColor=white)](https://plotly.com/)
+[![Objectron](https://img.shields.io/badge/Google%20Objectron-Benchmarked-4285F4?style=flat-square&logo=google&logoColor=white)](https://github.com/google-research-datasets/Objectron)
 
-$$\text{Volumetric Weight (kg)} = \frac{\text{Length (cm)} \times \text{Width (cm)} \times \text{Height (cm)}}{5000}$$
+<br/>
 
-Manual tape-measuring at parcel intake is slow, labor-intensive, and error-prone. This project delivers an automated, computer-vision parcel dimensioning system that measures metric-scale $L \times W \times H$ from smartphone video with known Augmented Reality (AR) camera geometry, filters unreliable frames with a rigorous Quality Gate, and verifies accuracy against ground-truth 3D bounding boxes from **Google Research's Objectron** dataset.
+> 📦 **Record a short video of any box → AI measures Length × Width × Height in seconds.**  
+> No tape measure. No special hardware. Just your phone.
 
----
-
-## 🏆 Acceptance Criteria Verification (A1 – A7)
-
-Benchmarked across **55 official Objectron test sequences** (`cereal_box` and `book` categories) and the OpenCV chessboard calibration dataset:
-
-| Criterion | Requirement Description | Target Specification | Benchmark Measured Result | Status |
-| :---: | :--- | :---: | :---: | :---: |
-| **A1** | **Camera Calibration RMS Error** | $\le 0.60\text{ px}$ | **$0.4087\text{ px}$** | **PASSED** ✅ |
-| **A2** | **Method A Mean Absolute Error (MAE)** | $\le 2.0\text{ cm}$ per dim | **$0.646\text{ cm}$** | **PASSED** ✅ |
-| **A3** | **Volumetric Weight Accuracy** | $\pm 15\%$ for $\ge 75\%$ videos | **$82.0\%$** | **PASSED** ✅ |
-| **A4** | **Method A 3D IoU (Sutherland-Hodgman)** | Mean IoU $\ge 0.50$ | **$0.8851$** | **PASSED** ✅ |
-| **A5** | **Method B Comparison & Failure Modes** | Comparative evaluation | Full Analysis Completed | **PASSED** ✅ |
-| **A6** | **Quality Gate Rejection (Truncation)** | $\text{TPR} \ge 90\%$, $\text{FPR} \le 10\%$ | **$\text{TPR} = 100\%$, $\text{FPR} = 0\%$** | **PASSED** ✅ |
-| **A7** | **Method A Measurement Latency** | $\le 2.0\text{ s}$ on CPU | **$0.028\text{ s}$** ($28\text{ ms}$) | **PASSED** ✅ |
+</div>
 
 ---
 
-## 🔬 System Architecture & Methods
+## ✨ What It Does
 
 ```
-                                  Phone Video Frame Sequence
-                                              │
-                      ┌───────────────────────┴───────────────────────┐
-                      ▼                                               ▼
-             Quality Gate (F5)                               Camera Intrinsics
-       • Blur Check (Laplacian > 60)                     • Lens Undistortion (F1)
-       • Truncation Guard (> 8 px margin)                • OpenGL NDC Projection
-       • Baseline Validator (> 5 cm)                                  │
-                      │                                               │
-             [Frame Accepted]                                         │
-                      │                                               │
-        ┌─────────────┴──────────────────────────────┐                │
-        ▼                                            ▼                │
-Method A: Multi-View (F3)                   Method B: Single-View (F4)│
- • DLT Triangulation (>= 2 frames)           • AR Ground Plane Intersect
- • Orthogonal Cuboid Fitting                 • Vertical Ray-Casting   │
-        │                                            │                │
-        └─────────────────────┬──────────────────────┘                │
-                              ▼                                       │
-                      Box Dimensions ($L, W, H$)                      │
-                              │                                       │
-                              ▼                                       │
-                 Volumetric Weight ($LWH/5000$)                       │
-                              │                                       │
-                              ▼                                       │
-                 3D HUD Wireframe Overlay ◄───────────────────────────┘
+📱 Phone Video  ──►  🧠 AI Pipeline  ──►  📏 L × W × H  ──►  ⚖️ Volumetric Weight
 ```
 
-### 1. Camera Calibration & Projection (F1, A1)
-* **OpenCV Chessboard Calibration:** $9 \times 6$ grid with sub-pixel corner refinement (`cv2.cornerSubPix`).
-* **Objectron Projection Formulation:** Implements exact OpenGL view-projection matrix decomposition:
-  $$\mathbf{M} = \mathbf{P} \cdot \mathbf{V}, \quad \begin{bmatrix} x^* \mathbf{M}_3 - \mathbf{M}_1 \\ y^* \mathbf{M}_3 - \mathbf{M}_0 \end{bmatrix} \mathbf{X}_w = 0$$
+| Step | Technology | Detail |
+|:----:|:-----------|:-------|
+| 1️⃣ | **Smart Camera Calibration** | EXIF metadata + 200+ phone database + radial undistortion |
+| 2️⃣ | **YOLOv8 Box Detection** | ONNX nano model + Hough-line classical fallback |
+| 3️⃣ | **3D Reconstruction** | DLT triangulation across multi-view frames |
+| 4️⃣ | **Scale Anchor** | A4 paper / Credit card for absolute metric scale |
+| 5️⃣ | **Quality Gate** | Auto-reject blurry / truncated / bad-baseline frames |
+| 6️⃣ | **3D Wireframe HUD** | Interactive Plotly WebGL digital twin overlay |
 
-### 2. Method A: Multi-View Geometric Triangulation (F3, A2–A4)
-* Selects keyframe pairs with optimal baseline ($10\text{--}20\text{ cm}$) to minimize AR pose drift.
-* Solves Direct Linear Transform (DLT) across multi-view ray intersections.
-* Fits 9-DoF oriented cuboid with singular value decomposition (SVD).
+---
 
-### 3. Method B: Single-View Ground-Plane Metrology (F4, A5)
-* Intersects optical camera rays with the detected AR floor plane.
-* Estimates parcel height via vertical edge projection and vanishing line constraints.
+## 🏆 Accuracy Benchmarks (Google Objectron · 55 sequences)
 
-### 4. Quality Gate & Honest Frame Rejection (F5, A6)
-* **Motion Blur Detection:** Variance of the Laplacian ($\sigma^2 < 60$ rejected).
-* **Truncation Rejection:** Evaluates proximity to image margins to discard out-of-frame boxes.
-* **Baseline Rejection:** Enforces camera displacement $\ge 5\text{ cm}$ to prevent collinear triangulation breakdown.
+| Criterion | Target | Achieved | Status |
+|:---------:|:------:|:--------:|:------:|
+| **A1** Camera RMS Reprojection Error | ≤ 0.60 px | **0.41 px** | ✅ PASS |
+| **A2** Mean Absolute Error per dim | ≤ 2.0 cm | **0.65 cm** | ✅ PASS |
+| **A3** Volumetric Weight Accuracy | ≥ 75% within ±15% | **82%** | ✅ PASS |
+| **A4** 3D IoU (Sutherland-Hodgman) | ≥ 0.50 | **0.89** | ✅ PASS |
+| **A5** Method A vs B Comparison | Comparative analysis | Completed | ✅ PASS |
+| **A6** Quality Gate (TPR / FPR) | TPR≥90%, FPR≤10% | **100% / 0%** | ✅ PASS |
+| **A7** Measurement Latency (CPU) | ≤ 2.0 s | **28 ms** | ✅ PASS |
+
+---
+
+## 📱 Mobile App (PWA)
+
+<div align="center">
+
+```
+┌─────────────────────────────┐
+│  📦  Box Dimensioner        │
+│  ───────────────────────── │
+│  🎥  Camera দিয়ে ভিডিও    │
+│  📁  Gallery থেকে Upload   │
+│  📐  A4 / Credit Card Scale │
+│  📊  L × W × H + Vol Weight│
+│  📲  Home Screen Install   │
+└─────────────────────────────┘
+```
+
+</div>
+
+**Install করার নিয়ম:**
+1. Chrome-এ Live App URL খোলো
+2. `⋮ Menu → "Add to Home Screen"` tap করো
+3. Home screen-এ icon পাবে — full-screen app!
+
+> Works on **Android Chrome** and **iOS Safari** — no App Store needed.
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Clone
+git clone https://github.com/Ishtiak-Ahmed886/box-dimensioning.git
+cd box-dimensioning
+
+# Setup
+python -m venv .venv
+.\.venv\Scripts\activate        # Windows
+# source .venv/bin/activate     # Linux/macOS
+
+pip install -r requirements.txt
+```
+
+### Run Streamlit Dashboard
+```bash
+streamlit run streamlit_app.py
+# → http://localhost:8501
+```
+
+### Run Mobile PWA Backend
+```bash
+uvicorn mobile_app.main:app --reload
+# → http://localhost:8000
+```
+
+### Run Tests
+```bash
+pytest box_dimensioning/tests -v
+```
+
+```
+✅ test_calibration_rms_reprojection_error         PASSED
+✅ test_undistortion_preserves_dimensions           PASSED
+✅ test_box_creation_and_properties                 PASSED
+✅ test_sutherland_hodgman_exact_iou                PASSED
+✅ test_box_fit_reconstruction                      PASSED
+✅ test_method_a_accuracy_and_latency_on_real_seq   PASSED
+✅ test_method_b_pipeline_and_comparison            PASSED
+✅ test_quality_gate_blur_rejection                 PASSED
+✅ test_quality_gate_baseline_rejection             PASSED
+✅ test_quality_gate_truncation_acceptance_a6       PASSED
+
+══════════════ 10 passed in 4.47s ══════════════
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+Phone Video
+    │
+    ├── Smart Calibration (EXIF → Phone DB → Heuristic)
+    │       └── smart_intrinsics.py
+    │
+    ├── YOLOv8 Detection (ONNX) ──► Hough fallback
+    │       └── deep_detector.py
+    │
+    ├── Scale Anchor (A4 / Credit Card)
+    │       └── scale_anchor.py
+    │
+    ├── Quality Gate (Blur + Truncation + Baseline)
+    │       └── quality_gate.py
+    │
+    ├── Method A: Multi-View DLT Triangulation
+    │       └── method_a_multiview.py
+    │
+    └── 3D Cuboid → L × W × H → Volumetric Weight
+            └── dimensioner.py
+```
 
 ---
 
 ## 📂 Repository Structure
 
 ```
-.
-├── box_dimensioning/
+box-dimensioning/
+├── 📱 mobile_app/
+│   ├── main.py                   # FastAPI PWA backend
+│   └── static/
+│       ├── index.html            # Mobile-first PWA UI
+│       └── sw.js                 # Service Worker (offline)
+│
+├── 📦 box_dimensioning/
 │   ├── app/
-│   │   ├── cli.py                    # Unified CLI (calibrate, measure, benchmark)
-│   │   └── live_app.py               # Interactive Streamlit Web App
+│   │   ├── live_app.py           # Streamlit dashboard
+│   │   └── cli.py                # CLI (calibrate / measure / benchmark)
 │   ├── calibration/
-│   │   ├── camera_calibrator.py      # Chessboard calibrator & undistorter
-│   │   └── intrinsics_checker.py     # Objectron projection sanity checker
-│   ├── dataset/
-│   │   ├── box_geometry.py           # 3D Box & Sutherland-Hodgman 3D IoU
-│   │   ├── downloader.py             # Public Objectron GCS downloader
-│   │   ├── objectron_parser.py       # Protobuf metadata & pose parser
-│   │   └── proto/                    # Compiled Objectron protobuf schemas
-│   ├── evaluation/
-│   │   ├── benchmark.py              # Test split automated benchmark suite
-│   │   └── metrics.py                # MAE, Volumetric Error & IoU metrics
-│   ├── pipeline/
-│   │   ├── dimensioner.py            # End-to-end pipeline & wireframe overlay
-│   │   ├── method_a_multiview.py     # Method A (multi-view triangulation)
-│   │   ├── method_b_singleview.py    # Method B (single-view metrology)
-│   │   └── quality_gate.py           # Blur, truncation & baseline filter
+│   │   ├── smart_intrinsics.py   # ✨ EXIF + 200-phone DB calibration
+│   │   └── camera_calibrator.py  # Chessboard OpenCV calibration
 │   ├── segmentation/
-│   │   ├── classical.py              # Bilateral filtering & edge suppression
-│   │   └── comparator.py             # Classical vs learned comparator
-│   └── tests/                        # 10/10 automated pytest suite
-├── data/
-│   ├── benchmark/                    # Benchmark report & raw JSON results
-│   ├── calibration/                  # OpenCV sample chessboard images
-│   └── objectron/                    # 55 Objectron test sequences
-├── requirements.txt                  # Python dependencies
-├── streamlit_app.py                  # Streamlit Cloud entrypoint
-└── README.md
+│   │   ├── deep_detector.py      # ✨ YOLOv8-nano ONNX detector
+│   │   └── classical.py          # Bilateral + Hough fallback
+│   ├── pipeline/
+│   │   ├── scale_anchor.py       # ✨ A4/Credit card scale resolution
+│   │   ├── custom_video_processor.py  # Mobile video pipeline
+│   │   ├── method_a_multiview.py # DLT triangulation
+│   │   ├── method_b_singleview.py# Ground-plane metrology
+│   │   └── quality_gate.py       # Frame rejection filter
+│   ├── dataset/                  # Objectron parser + downloader
+│   ├── evaluation/               # MAE, IoU, benchmark metrics
+│   └── tests/                    # 10/10 pytest suite
+│
+├── 🗄️ data/
+│   ├── objectron/                # 55 Google Objectron sequences
+│   ├── calibration/              # Chessboard calibration images
+│   └── benchmark/                # Benchmark results JSON
+│
+├── streamlit_app.py              # Streamlit Cloud entrypoint
+├── render.yaml                   # Render.com deploy config
+├── Procfile                      # Heroku deploy config
+└── requirements.txt
 ```
 
 ---
 
-## ⚡ Quick Start
-
-### 1. Installation
-```bash
-git clone https://github.com/Ishtiak-Ahmed886/box-dimensioning.git
-cd box-dimensioning
-python -m venv .venv
-# On Windows:
-.\.venv\Scripts\activate
-# On Linux/macOS:
-# source .venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-### 2. Run the Interactive Dashboard
-```bash
-streamlit run streamlit_app.py
-```
-Open `http://localhost:8501` to test live video sequences.
-
-### 3. Run Automated Tests
-```bash
-pytest box_dimensioning/tests -v
-```
-Output:
-```text
-box_dimensioning/tests/test_calibration.py::test_calibration_rms_reprojection_error PASSED [ 10%]
-box_dimensioning/tests/test_calibration.py::test_undistortion_preserves_dimensions PASSED [ 20%]
-box_dimensioning/tests/test_geometry.py::test_box_creation_and_properties PASSED [ 30%]
-box_dimensioning/tests/test_geometry.py::test_sutherland_hodgman_exact_iou PASSED [ 40%]
-box_dimensioning/tests/test_geometry.py::test_box_fit_reconstruction PASSED [ 50%]
-box_dimensioning/tests/test_method_a.py::test_method_a_accuracy_and_latency_on_real_sequence PASSED [ 60%]
-box_dimensioning/tests/test_method_b.py::test_method_b_pipeline_and_comparison PASSED [ 70%]
-box_dimensioning/tests/test_quality_gate.py::test_quality_gate_blur_rejection PASSED [ 80%]
-box_dimensioning/tests/test_quality_gate.py::test_quality_gate_baseline_rejection PASSED [ 90%]
-box_dimensioning/tests/test_quality_gate.py::test_quality_gate_truncation_acceptance_criterion_a6 PASSED [100%]
-
-============================= 10 passed in 4.47s =============================
-```
-
-### 4. CLI Usage Examples
-
-* **Calibrate Camera:**
-  ```bash
-  python -m box_dimensioning.app.cli calibrate --dir data/calibration
-  ```
-
-* **Measure Package (Method A):**
-  ```bash
-  python -m box_dimensioning.app.cli measure --seq data/objectron/cereal_box/batch-26/22 --method A
-  ```
-
-* **Run Full 50-Sequence Benchmark:**
-  ```bash
-  python -m box_dimensioning.app.cli benchmark --data-dir data/objectron --max-seq 50
-  ```
-
----
-
-## 📊 Sample Output (JSON API)
+## 📊 Sample API Output
 
 ```json
 {
@@ -202,11 +216,10 @@ box_dimensioning/tests/test_quality_gate.py::test_quality_gate_truncation_accept
   },
   "volumetric_weight_kg": 0.3394,
   "quality_flags": {
-    "is_truncated": false,
-    "blur_score": 119.02,
     "is_blurry": false,
+    "blur_score": 119.02,
+    "is_truncated": false,
     "baseline_meters": 0.1499,
-    "fit_residual": 0.02,
     "reason_code": "ACCEPT"
   },
   "latency_seconds": 0.028,
@@ -220,5 +233,70 @@ box_dimensioning/tests/test_quality_gate.py::test_quality_gate_truncation_accept
 
 ---
 
+## 🔧 CLI Usage
+
+```bash
+# Calibrate camera
+python -m box_dimensioning.app.cli calibrate --dir data/calibration
+
+# Measure a parcel (Method A)
+python -m box_dimensioning.app.cli measure \
+  --seq data/objectron/cereal_box/batch-26/22 --method A
+
+# Full 55-sequence benchmark
+python -m box_dimensioning.app.cli benchmark \
+  --data-dir data/objectron --max-seq 55
+```
+
+---
+
+## 🌐 Deployment
+
+| Platform | Config | Status |
+|----------|--------|--------|
+| **Streamlit Cloud** | `streamlit_app.py` | 🟢 Live |
+| **Render.com** | `render.yaml` | ✅ Ready |
+| **Heroku** | `Procfile` | ✅ Ready |
+
+---
+
+## 📐 Volumetric Weight Formula
+
+$$\text{Volumetric Weight (kg)} = \frac{L \text{ (cm)} \times W \text{ (cm)} \times H \text{ (cm)}}{5000}$$
+
+Used by DHL, FedEx, UPS, and all major couriers for dimensional billing.
+
+---
+
+## 🤝 Tech Stack
+
+<div align="center">
+
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
+![Plotly](https://img.shields.io/badge/Plotly-3F4F75?style=for-the-badge&logo=plotly&logoColor=white)
+![PyTorch](https://img.shields.io/badge/YOLOv8%20ONNX-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-10%2F10-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white)
+
+</div>
+
+---
+
 ## 📜 License
+
 This project is licensed under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=100&section=footer" width="100%"/>
+
+**Made with ❤️ by [Ishtiak Ahmed](https://github.com/Ishtiak-Ahmed886)**
+
+⭐ Star this repo if it helped you!
+
+</div>
