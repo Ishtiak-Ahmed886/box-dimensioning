@@ -215,9 +215,9 @@ class DeepBoxDetector:
         if lines is not None and len(lines) >= 4:
             # Compute intersection points of line pairs
             intersections = []
-            segs = lines[:, 0, :]  # (N, 4): x1,y1,x2,y2
+            segs = lines.reshape(-1, 4)  # safely handles (N, 1, 4) and (N, 4)
             for i in range(len(segs)):
-                for j in range(i + 1, min(len(segs), i + 10)):
+                for j in range(i + 1, min(len(segs), i + 15)):
                     pt = self._line_intersection(segs[i], segs[j])
                     if pt is not None:
                         x, y = pt
@@ -225,17 +225,20 @@ class DeepBoxDetector:
                             intersections.append([x, y])
 
             if len(intersections) >= 4:
-                pts = np.array(intersections, dtype=np.float32)
-                # Cluster with K-means to find distinct corners
-                n_clusters = min(8, len(pts))
-                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-                _, labels, centers = cv2.kmeans(
-                    pts, n_clusters, None, criteria, 5, cv2.KMEANS_PP_CENTERS
-                )
-                corners = centers.astype(np.float32)
-                xs = centers[:, 0]; ys = centers[:, 1]
-                bbox = (int(xs.min()), int(ys.min()),
-                        int(xs.max() - xs.min()), int(ys.max() - ys.min()))
+                try:
+                    pts = np.array(intersections, dtype=np.float32)
+                    # Cluster with K-means to find distinct corners
+                    n_clusters = min(8, len(pts))
+                    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+                    _, labels, centers = cv2.kmeans(
+                        pts, n_clusters, None, criteria, 5, cv2.KMEANS_PP_CENTERS
+                    )
+                    corners = centers.astype(np.float32)
+                    xs = centers[:, 0]; ys = centers[:, 1]
+                    bbox = (int(xs.min()), int(ys.min()),
+                            int(xs.max() - xs.min()), int(ys.max() - ys.min()))
+                except Exception:
+                    pass
         
         # Fallback: largest contour
         if len(corners) < 4:
