@@ -205,7 +205,7 @@ with tab_live:
             st.markdown("**🤖 Detection Engine**")
             st.caption("YOLOv8 deep or classical fallback")
             use_deep = st.toggle("Use YOLOv8 Deep Detector", value=True, key="use_deep")
-            st.caption("⚠️ First run downloads ~6 MB model" if use_deep else "Using improved Hough-line classical")
+            strict_qg = st.checkbox("Strict Quality Gate", value=False, key="strict_qg", help="If enabled, auto-rejects video on blur. Keep unchecked for normal mobile phone videos.")
 
         if uploaded_file is not None:
             # Save uploaded video to data/uploads
@@ -227,6 +227,7 @@ with tab_live:
                             phone_make=phone_make,
                             phone_model=phone_model,
                             use_deep_detector=use_deep,
+                            strict_quality_gate=strict_qg,
                         )
                     except Exception as e:
                         st.error(f"❌ Error processing video: {e}. Please ensure the video is clear and contains a box.")
@@ -247,7 +248,11 @@ with tab_live:
 
                         with col_stats:
                             st.subheader("📋 Billing & Measurement Results")
-                            st.success("✅ Package Detected & Dimensioned Successfully!")
+                            qf = res.get("quality_flags", {})
+                            if qf.get("is_blurry"):
+                                st.warning(f"⚠️ Notice: Hand-held motion blur detected (Score: {qf.get('blur_score', 0.0)}). Reconstructed from sharpest keyframe.")
+                            else:
+                                st.success("✅ Package Detected & Dimensioned Successfully!")
 
                             dim = res["dimensions_cm"]
                             vw = res["volumetric_weight_kg"]

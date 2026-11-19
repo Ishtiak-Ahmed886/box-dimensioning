@@ -172,6 +172,7 @@ def process_custom_mobile_video(
     phone_make: Optional[str] = None,          # e.g. "Samsung"
     phone_model: Optional[str] = None,         # e.g. "SM-S911"
     use_deep_detector: bool = True,
+    strict_quality_gate: bool = False,
 ) -> Dict:
     """Processes an uploaded mobile video, recovers geometry, and calculates volumetric weight.
     Returns: Complete measurement dictionary with HUD-rendered frame.
@@ -226,9 +227,9 @@ def process_custom_mobile_video(
     corners2 = c2_res.get("corners_2d", np.empty((0, 2)))
     detection_method = c1_res.get("method", "unknown")
 
-    # Quality Gate checks
+    # Quality Gate checks (For custom upload, only hard-reject if strict_quality_gate is enabled)
     q_report = q_gate.validate_frame(img1, corners1, w, h)
-    if q_report.status == "REJECTED":
+    if strict_quality_gate and q_report.status == "REJECTED":
         return {
             "status": "REJECTED",
             "method": "CUSTOM_MOBILE_VIDEO",
@@ -369,10 +370,10 @@ def process_custom_mobile_video(
         },
         "volumetric_weight_kg": round(vol_weight, 4),
         "quality_flags": {
-            "is_truncated": False,
+            "is_truncated": q_report.is_truncated,
             "blur_score": round(blur_score, 1),
-            "is_blurry": False,
-            "reason_code": "ACCEPT"
+            "is_blurry": q_report.is_blurry,
+            "reason_code": "WARN_BLURRY" if q_report.is_blurry else "ACCEPT"
         },
         "selected_frames": [int(idx1), int(idx2)],
         "latency_seconds": latency,
