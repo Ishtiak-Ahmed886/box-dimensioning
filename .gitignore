@@ -1,4 +1,4 @@
-﻿.venv/
+.venv/
 .pytest_cache/
 __pycache__/
 *.pyc
@@ -9,5 +9,7 @@ Village_Love_Story_Ep9/
 TrueDeed_*
 *.jpg
 *.png
+!docs/images/*.jpg
+!docs/images/*.png
 site_summary.txt
 *.html
