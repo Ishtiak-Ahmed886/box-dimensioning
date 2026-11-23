@@ -206,57 +206,74 @@ with tab_live:
                             cv2.rectangle(stg2_img, (bx, by), (bx + bw, by + bh), (255, 200, 0), 4)
                             cv2.putText(stg2_img, f"Parcel BBox ({det_info.get('method', 'detector')})", (bx, max(35, by - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
 
-                        # Stage 3: Detected 2D Corner Points
+                        # Stage 3: Detected 2D Corner Points (if available)
                         stg3_img = target_raw_frame.copy()
-                        if len(raw_2d_corners) > 0:
+                        has_direct_2d_corners = len(raw_2d_corners) > 0
+                        if has_direct_2d_corners:
                             for c_idx, c_pt in enumerate(raw_2d_corners[:8]):
-                                cx, cy = int(c_pt[0]), int(c_pt[1])
-                                cv2.circle(stg3_img, (cx, cy), 8, (0, 0, 0), -1)
-                                cv2.circle(stg3_img, (cx, cy), 6, (0, 140, 255), -1)
-                                cv2.putText(stg3_img, f"D{c_idx+1}", (cx + 10, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 140, 255), 2)
+                                cx, cy = int(round(c_pt[0])), int(round(c_pt[1]))
+                                cv2.circle(stg3_img, (cx, cy), 8, (0, 0, 0), -1, cv2.LINE_AA)
+                                cv2.circle(stg3_img, (cx, cy), 6, (0, 140, 255), -1, cv2.LINE_AA)
+                                cv2.putText(stg3_img, f"D{c_idx+1}", (cx + 10, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 140, 255), 2, cv2.LINE_AA)
 
                         # Stage 4: Reprojected 3D Cuboid Wireframe
                         stg4_img = target_raw_frame.copy()
                         reproj_pts = res.get("reprojected_wireframe_2d")
-                        if reproj_pts is not None and len(reproj_pts) >= 9:
+                        has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
+                        if has_projected_3d:
                             from box_dimensioning.dataset.box_geometry import EDGES
                             pts_int = np.asarray(reproj_pts, dtype=np.int32)
+                            h_stg, w_stg = stg4_img.shape[:2]
+
                             # 12 Green cuboid edges
                             for beg, end in EDGES:
-                                cv2.line(stg4_img, tuple(pts_int[beg]), tuple(pts_int[end]), (0, 255, 0), 3)
+                                cv2.line(stg4_img, tuple(pts_int[beg]), tuple(pts_int[end]), (0, 255, 0), 3, cv2.LINE_AA)
+
                             # 8 Yellow/Red corner dots with prominent 1-8 numbered markers
                             for c_i in range(1, 9):
                                 pt = tuple(pts_int[c_i])
-                                cv2.circle(stg4_img, pt, 8, (0, 0, 0), -1)
-                                cv2.circle(stg4_img, pt, 6, (0, 255, 255), -1)
-                                cv2.circle(stg4_img, (pt[0] + 16, pt[1] - 14), 12, (0, 0, 0), -1)
-                                cv2.circle(stg4_img, (pt[0] + 16, pt[1] - 14), 10, (0, 255, 255), -1)
-                                cv2.putText(stg4_img, str(c_i), (pt[0] + 12, pt[1] - 9), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-                            # Center marker
-                            cv2.circle(stg4_img, tuple(pts_int[0]), 7, (255, 100, 0), -1)
+                                # Corner dot: Red outer ring with bright yellow core
+                                cv2.circle(stg4_img, pt, 8, (0, 0, 255), -1, cv2.LINE_AA)
+                                cv2.circle(stg4_img, pt, 5, (0, 255, 255), -1, cv2.LINE_AA)
 
-                        t4, t3, t2, t1 = st.tabs([
-                            "Stage 4: 🧊 Reprojected 3D Cuboid",
-                            "Stage 3: 🔍 Detected 2D Corners",
-                            "Stage 2: 🤖 YOLO / Parcel BBox",
-                            "Stage 1: 📷 Original Video Frame"
+                                # Clearly visible numbered marker badge (1 to 8)
+                                badge_x = pt[0] + 16 if pt[0] + 30 < w_stg else pt[0] - 16
+                                badge_y = pt[1] - 16 if pt[1] - 20 > 0 else pt[1] + 16
+                                cv2.circle(stg4_img, (badge_x, badge_y), 13, (0, 0, 0), -1, cv2.LINE_AA)
+                                cv2.circle(stg4_img, (badge_x, badge_y), 11, (0, 255, 255), -1, cv2.LINE_AA)
+                                cv2.putText(stg4_img, str(c_i), (badge_x - 4, badge_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 2, cv2.LINE_AA)
+
+                            # Center 3D Centroid marker
+                            cv2.circle(stg4_img, tuple(pts_int[0]), 7, (255, 120, 0), -1, cv2.LINE_AA)
+
+                        # Render the 4 Detection & Reconstruction Stages in Order (Stage 1 -> 4)
+                        t1, t2, t3, t4 = st.tabs([
+                            "Stage 1: 📷 Original Video Frame",
+                            "Stage 2: 🤖 YOLO Bounding Box",
+                            "Stage 3: 🔍 Detected 2D Corner Points",
+                            "Stage 4: 🧊 Reprojected 3D Cuboid Wireframe"
                         ])
 
-                        with t4:
-                            st.image(cv2.cvtColor(stg4_img, cv2.COLOR_BGR2RGB), use_container_width=True,
-                                     caption=f"Stage 4: Calibrated 3D Cuboid projected back onto Frame #{f_idx} (12 green edges, 8 numbered corners 1-8).")
-                        with t3:
-                            if len(raw_2d_corners) > 0:
-                                st.image(cv2.cvtColor(stg3_img, cv2.COLOR_BGR2RGB), use_container_width=True,
-                                         caption="Stage 3: Local 2D corner candidates detected in 2D image coordinates (D1 - D8).")
-                            else:
-                                st.warning("⚠️ 2D direct corner detector found no isolated corners on this frame. The 3D box was solved via multi-view epipolar geometry and camera poses.")
-                        with t2:
-                            st.image(cv2.cvtColor(stg2_img, cv2.COLOR_BGR2RGB), use_container_width=True,
-                                     caption=f"Stage 2: YOLO / Contour parcel bounding box (ROI: {bw}x{bh} px).")
                         with t1:
                             st.image(cv2.cvtColor(stg1_img, cv2.COLOR_BGR2RGB), use_container_width=True,
-                                     caption=f"Stage 1: Raw original video frame #{f_idx} from dataset.")
+                                     caption=f"Stage 1: Original Objectron video keyframe #{f_idx}.")
+                        with t2:
+                            st.image(cv2.cvtColor(stg2_img, cv2.COLOR_BGR2RGB), use_container_width=True,
+                                     caption=f"Stage 2: 2D Box Bounding Box (ROI: {bw}x{bh} px). Note: YOLO detects 2D bounding boxes only, not 3D corners.")
+                            st.caption("ℹ️ **Disambiguation:** YOLOv8 localizes the 2D bounding box of the package. It does not directly produce 3D cuboid corners.")
+                        with t3:
+                            if has_direct_2d_corners:
+                                st.image(cv2.cvtColor(stg3_img, cv2.COLOR_BGR2RGB), use_container_width=True,
+                                         caption="Stage 3: Local 2D corner candidates detected in image space (D1 - D8).")
+                            else:
+                                st.warning("⚠️ **Direct 2D Corner Detection:** No distinct 2D corner feature points were isolated on this frame by the 2D detector. (No artificial corners were generated). The 3D box in Stage 4 is solved via multi-view epipolar geometry and camera poses.")
+                        with t4:
+                            if has_projected_3d:
+                                st.image(cv2.cvtColor(stg4_img, cv2.COLOR_BGR2RGB), use_container_width=True,
+                                         caption=f"Stage 4: Geometrically Projected 3D Cuboid onto Frame #{f_idx} (12 green edges, 8 numbered corners 1 to 8).")
+                                st.caption("📐 **Geometric Projection:** These 8 corners are mathematically computed by 3D bundle adjustment and camera projection matrix ($P = K [R | t]$), NOT detected as isolated 2D pixels by YOLO.")
+                            else:
+                                st.error("❌ **3D Projection Failed:** Geometric fitting could not establish valid 3D cuboid corners for this sequence.")
 
                     else:
                         st.error("❌ No original video frame available to overlay the 3D cuboid wireframe. Black canvas is suppressed.")
@@ -316,30 +333,17 @@ with tab_live:
 
                 corner_table_rows = []
                 reproj_pts = res.get("reprojected_wireframe_2d")
-                corner_labels = [
-                    "Centroid / Center",
-                    "Corner 1 (Top-Front-Left)",
-                    "Corner 2 (Top-Front-Right)",
-                    "Corner 3 (Top-Back-Right)",
-                    "Corner 4 (Top-Back-Left)",
-                    "Corner 5 (Bottom-Front-Left)",
-                    "Corner 6 (Bottom-Front-Right)",
-                    "Corner 7 (Bottom-Back-Right)",
-                    "Corner 8 (Bottom-Back-Left)",
-                ]
                 if reproj_pts is not None and len(reproj_pts) >= 9:
                     for c_i in range(1, 9):
                         px, py = reproj_pts[c_i]
                         corner_table_rows.append({
                             "Corner ID": f"Corner {c_i}",
-                            "Description": corner_labels[c_i],
                             "X Pixel": f"{px:.1f}",
                             "Y Pixel": f"{py:.1f}",
                             "Point Type": "Geometrically Projected 3D Corner"
                         })
                     corner_table_rows.append({
                         "Corner ID": "Center",
-                        "Description": "3D Bounding Box Centroid",
                         "X Pixel": f"{reproj_pts[0][0]:.1f}",
                         "Y Pixel": f"{reproj_pts[0][1]:.1f}",
                         "Point Type": "3D Centroid Projection"
@@ -349,17 +353,16 @@ with tab_live:
                     for d_i, d_pt in enumerate(raw_2d_corners[:8]):
                         corner_table_rows.append({
                             "Corner ID": f"D{d_i+1}",
-                            "Description": f"2D Detector Candidate {d_i+1}",
                             "X Pixel": f"{d_pt[0]:.1f}",
                             "Y Pixel": f"{d_pt[1]:.1f}",
-                            "Point Type": "2D Detector Feature (Image Space)"
+                            "Point Type": "Direct 2D Detector Point"
                         })
 
                 if corner_table_rows:
                     import pandas as pd
                     st.dataframe(pd.DataFrame(corner_table_rows), use_container_width=True)
                 else:
-                    st.info("No numerical corner coordinates available for this sequence.")
+                    st.warning("⚠️ No numerical corner coordinates could be calculated for this sequence.")
 
                 st.markdown("---")
                 st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")
@@ -372,18 +375,24 @@ with tab_live:
                 )
                 st.plotly_chart(fig_3d, use_container_width=True)
 
+                st.markdown("#### 📘 3D Digital Twin Structure & Explanation")
                 col_3d_a, col_3d_b, col_3d_c = st.columns(3)
                 with col_3d_a:
-                    st.markdown("**📏 Principal Dimensions**")
-                    st.write(f"- **Length ($X$-axis):** {dim['length']:.1f} cm")
-                    st.write(f"- **Width ($Y$-axis):** {dim['width']:.1f} cm")
-                    st.write(f"- **Height ($Z$-axis):** {dim['height']:.1f} cm")
+                    st.markdown("**📏 Metric Dimensions**")
+                    st.write(f"- **Length ($X$-axis):** {dim['length']:.1f} cm (Longitudinal axis)")
+                    st.write(f"- **Width ($Y$-axis):** {dim['width']:.1f} cm (Lateral depth axis)")
+                    st.write(f"- **Height ($Z$-axis):** {dim['height']:.1f} cm (Vertical elevation)")
                 with col_3d_b:
                     st.markdown("**🔴 8 Vertices ($V_1$ - $V_8$)**")
-                    st.write("Red spheres indicate the 8 extreme 3D corner coordinates of the cuboid volume above ground plane.")
+                    st.write("Red spheres indicate the 8 extreme 3D corner coordinates of the cuboid volume:")
+                    st.write("- $V_1 - V_4$: Top surface corners (roof)")
+                    st.write("- $V_5 - V_8$: Bottom surface corners (floor base)")
                 with col_3d_c:
-                    st.markdown("**🟩 12 Edges (Wireframe)**")
-                    st.write("Green line rails represent the 4 bottom base edges, 4 top roof edges, and 4 vertical height pillars.")
+                    st.markdown("**🟩 12 Edges (Wireframe Rails)**")
+                    st.write("Green line rails represent the 12 bounding cuboid edges:")
+                    st.write("- 4 Base perimeter edges on ground plane")
+                    st.write("- 4 Top ceiling edges")
+                    st.write("- 4 Vertical pillar posts connecting base to ceiling")
 
     elif source_mode == "📤 Upload Custom Phone Video":
         # Custom Mobile Video Upload Mode

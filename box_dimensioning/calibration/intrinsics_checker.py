@@ -13,25 +13,38 @@ def draw_projected_box_wireframe(
     image: np.ndarray,
     projected_points_2d: np.ndarray,
     color_edges: Tuple[int, int, int] = (0, 255, 0),
-    color_corners: Tuple[int, int, int] = (0, 0, 255),
-    thickness: int = 2
+    color_corners: Tuple[int, int, int] = (0, 255, 255),
+    thickness: int = 3,
+    show_corner_labels: bool = True
 ) -> np.ndarray:
-    """Draws 3D wireframe bounding box on an image given 9 2D keypoint coordinates."""
+    """Draws 3D wireframe bounding box on an image with 12 green edges, yellow/red corner dots, and numbered 1-8 markers."""
     img = image.copy()
     pts = np.asarray(projected_points_2d, dtype=np.int32)
+    h_img, w_img = img.shape[:2]
 
-    # Draw edges
+    # Draw 12 cuboid wireframe edges (green)
     for begin, end in EDGES:
         pt1 = tuple(pts[begin])
         pt2 = tuple(pts[end])
-        cv2.line(img, pt1, pt2, color_edges, thickness)
+        cv2.line(img, pt1, pt2, color_edges, thickness, cv2.LINE_AA)
 
-    # Draw corners
+    # Draw 8 corner points with yellow/red markers and numbered 1-8 badges
     for i in range(1, NUM_KEYPOINTS):
-        cv2.circle(img, tuple(pts[i]), thickness + 2, color_corners, -1)
+        pt = tuple(pts[i])
+        # Outer red ring, inner yellow dot for high contrast
+        cv2.circle(img, pt, thickness + 5, (0, 0, 255), -1, cv2.LINE_AA)
+        cv2.circle(img, pt, thickness + 2, (0, 255, 255), -1, cv2.LINE_AA)
+
+        if show_corner_labels:
+            # Position numbered circular badge (1-8) adjacent to corner
+            badge_x = pt[0] + 16 if pt[0] + 30 < w_img else pt[0] - 16
+            badge_y = pt[1] - 16 if pt[1] - 20 > 0 else pt[1] + 16
+            cv2.circle(img, (badge_x, badge_y), 12, (0, 0, 0), -1, cv2.LINE_AA)
+            cv2.circle(img, (badge_x, badge_y), 10, (0, 255, 255), -1, cv2.LINE_AA)
+            cv2.putText(img, str(i), (badge_x - 4, badge_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 2, cv2.LINE_AA)
 
     # Draw center point (0)
-    cv2.circle(img, tuple(pts[0]), thickness + 3, (255, 0, 0), -1)
+    cv2.circle(img, tuple(pts[0]), thickness + 3, (255, 120, 0), -1, cv2.LINE_AA)
 
     return img
 
