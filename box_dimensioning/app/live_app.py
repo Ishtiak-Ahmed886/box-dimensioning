@@ -23,6 +23,8 @@ from box_dimensioning.pipeline.dimensioner import BoxDimensioner
 from box_dimensioning.calibration.intrinsics_checker import draw_projected_box_wireframe
 from box_dimensioning.pipeline.custom_video_processor import process_custom_mobile_video
 from box_dimensioning.visualization.box_3d_renderer import create_interactive_3d_plotly_figure
+from box_dimensioning.pipeline.camera_box_tracker import CameraBoxTracker, TrackingState
+from box_dimensioning.app.live_cam_tracker import generate_synthetic_box_frame
 
 
 st.set_page_config(
@@ -43,7 +45,7 @@ st.markdown(
 st.sidebar.header("🎯 Video Source Selection")
 source_mode = st.sidebar.radio(
     "Choose Video Source:",
-    ["📂 Objectron Test Dataset", "📤 Upload Custom Phone Video"]
+    ["📂 Objectron Test Dataset", "📤 Upload Custom Phone Video", "📹 Live Laptop Camera Tracker"]
 )
 
 # Common Settings
@@ -383,7 +385,7 @@ with tab_live:
                     st.markdown("**🟩 12 Edges (Wireframe)**")
                     st.write("Green line rails represent the 4 bottom base edges, 4 top roof edges, and 4 vertical height pillars.")
 
-    else:
+    elif source_mode == "📤 Upload Custom Phone Video":
         # Custom Mobile Video Upload Mode
         st.subheader("📤 Upload Mobile Phone Parcel Video (.mp4 / .mov)")
         st.markdown(
@@ -530,6 +532,100 @@ with tab_live:
                             title="Custom Video: 3D Reconstructed Parcel Model"
                         )
                         st.plotly_chart(fig_custom_3d, use_container_width=True)
+
+    elif source_mode == "📹 Live Laptop Camera Tracker":
+        st.subheader("📹 Real-Time Laptop Camera Box Tracker & Volumetric Dimensioner")
+        st.markdown(
+            "Continuous box tracking and cuboid dimensioning using your laptop's integrated camera or simulated synthetic stream. "
+            "Applies clutter suppression (distinguishing boxes from cups, hands, keyboards), smooth OpenCV tracking, "
+            "and 8-point cuboid 3D reprojection."
+        )
+
+        cam_c1, cam_c2 = st.columns([1, 2])
+        with cam_c1:
+            st.markdown("### ⚙️ Camera & Tracker Controls")
+            cam_mode = st.radio("Camera Source:", ["Webcam (Device 0)", "Simulated Test Video Stream"])
+            cam_dist = st.slider("Target Distance (cm):", 30.0, 150.0, 60.0, 5.0)
+            cam_engine = st.selectbox("Tracking Engine:", ["mil", "optical_flow", "csrt", "kcf"], index=0)
+            redetect_freq = st.slider("Re-detection Frequency (frames):", 5, 60, 15, 5)
+
+            run_tracker = st.toggle("▶️ Start Camera Tracking", value=False)
+            st.caption("Tip: You can also run the full native OpenCV desktop app via:")
+            st.code("python -m box_dimensioning.app.live_cam_tracker", language="bash")
+
+        with cam_c2:
+            frame_placeholder = st.empty()
+            metric_placeholder = st.empty()
+
+        if run_tracker:
+            cam_tracker = CameraBoxTracker(
+                default_distance_cm=cam_dist,
+                detection_interval=redetect_freq,
+                tracker_type=cam_engine,
+            )
+
+            is_sim = "Simulated" in cam_mode
+            cap = None
+            if not is_sim:
+                if sys.platform.startswith("win"):
+                    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+                    if not cap.isOpened():
+                        cap.release()
+                        cap = cv2.VideoCapture(0)
+                else:
+                    cap = cv2.VideoCapture(0)
+
+                if not cap.isOpened():
+                    st.warning("⚠️ Could not open physical webcam (Device 0). Falling back to Simulated Stream.")
+                    is_sim = True
+                    if cap:
+                        cap.release()
+
+            sim_x = 180
+            sim_dx = 3
+
+            # Run for a demonstration batch of frames (Streamlit reactive loop)
+            for _ in range(120):
+                if not run_tracker:
+                    break
+
+                if is_sim:
+                    sim_x += sim_dx
+                    if sim_x > 260 or sim_x < 140:
+                        sim_dx = -sim_dx
+                    frame = generate_synthetic_box_frame(box_pos=(sim_x, 140))
+                    time.sleep(0.04)
+                else:
+                    ret, frame = cap.read()
+                    if not ret or frame is None:
+                        st.error("Failed to read frame from webcam.")
+                        break
+
+                res = cam_tracker.process_frame(frame)
+                annotated_rgb = cv2.cvtColor(res["annotated_frame"], cv2.COLOR_BGR2RGB)
+                frame_placeholder.image(annotated_rgb, channels="RGB", use_container_width=True)
+
+                d = res["dimensions_cm"]
+                vw = res["volumetric_weight_kg"]
+                status_color = "🟢" if res["state"] == TrackingState.TRACKING else "🟡" if res["state"] == TrackingState.INITIALIZING else "🔴"
+
+                with metric_placeholder.container():
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Tracker Status", f"{status_color} {res['state']}")
+                    m2.metric("FPS", f"{res['fps']:.1f}")
+                    m3.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
+                    m4.metric("Volumetric Weight", f"{vw:.3f} kg")
+
+            if cap is not None and cap.isOpened():
+                cap.release()
+        else:
+            # Show preview banner
+            preview_frame = generate_synthetic_box_frame(box_pos=(200, 140))
+            tracker_preview = CameraBoxTracker(default_distance_cm=cam_dist)
+            prev_res = tracker_preview.process_frame(preview_frame)
+            frame_placeholder.image(cv2.cvtColor(prev_res["annotated_frame"], cv2.COLOR_BGR2RGB),
+                                    caption="Ready — Toggle 'Start Camera Tracking' to begin.",
+                                    use_container_width=True)
 
 with tab_calib:
     st.subheader("OpenCV Chessboard Camera Calibration (F1, A1)")
