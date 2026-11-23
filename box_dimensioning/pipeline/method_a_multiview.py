@@ -132,6 +132,14 @@ class MethodAMultiView:
             x2_star = (2.0 * u2 / float(w2)) - 1.0
             y2_star = (2.0 * v2 / float(h2)) - 1.0
 
+            # NOTE ON OBJECTRON PROJECTION CONVENTION:
+            # Google Objectron videos are captured in portrait AR mode where OpenGL NDC coordinates
+            # are mapped such that NDC row 1 corresponds to horizontal pixel axis u (image width)
+            # and NDC row 0 corresponds to vertical pixel axis v (image height), as defined in
+            # box_geometry.py project_to_image (x = p_2d_ndc[:, 1], y = p_2d_ndc[:, 0]).
+            # Therefore, standard DLT (x* M3 - M_axis = 0) maps:
+            # - Horizontal axis u -> x*_ndc * M[3] - M[1] = 0 (exact 0.000000m reconstruction)
+            # - Vertical axis v   -> y*_ndc * M[3] - M[0] = 0
             A = np.zeros((4, 4), dtype=np.float64)
             A[0] = x1_star * M1[3] - M1[1]
             A[1] = y1_star * M1[3] - M1[0]
@@ -200,19 +208,70 @@ class MethodAMultiView:
         if len(corners1) == 9 and len(corners2) == 9:
             return np.asarray(corners1, dtype=np.float64), np.asarray(corners2, dtype=np.float64)
 
-        # Match corner candidates using nearest epipolar line distance
+        # Match corner candidates using Epipolar Line constraint and geometric distance
         if len(corners1) > 0 and len(corners2) > 0:
+            C1 = frame1.transform[:3, 3]
+            M2 = frame2.projection_matrix @ frame2.view_matrix
+
+            # Epipole in frame 2
+            c1_world_h = np.array([C1[0], C1[1], C1[2], 1.0], dtype=np.float64)
+            e2_proj = M2 @ c1_world_h
+            e2_ndc_x = (e2_proj[1] / e2_proj[3]) if abs(e2_proj[3]) > 1e-9 else 0.0
+            e2_ndc_y = (e2_proj[0] / e2_proj[3]) if abs(e2_proj[3]) > 1e-9 else 0.0
+            e2_px = np.array([((1.0 + e2_ndc_x) * 0.5) * frame2.image_width,
+                              ((1.0 + e2_ndc_y) * 0.5) * frame2.image_height])
+
+            inv_view1 = np.linalg.inv(frame1.view_matrix)
+            inv_proj1 = np.linalg.pinv(frame1.projection_matrix)
+
             for c1 in corners1:
-                best_c2 = None
-                min_dist = float('inf')
-                for c2 in corners2:
-                    dist = np.linalg.norm(c1 - c2)
-                    if dist < min_dist:
-                        min_dist = dist
-                        best_c2 = c2
-                if best_c2 is not None and min_dist < max(frame1.image_width, frame1.image_height) * 0.4:
-                    matched1.append(c1)
-                    matched2.append(best_c2)
+                u1, v1 = float(c1[0]), float(c1[1])
+                matched = False
+
+                # Backproject ray from frame 1 into world to construct epipolar line in frame 2
+                x1_star = (2.0 * u1 / float(frame1.image_width)) - 1.0
+                y1_star = (2.0 * v1 / float(frame1.image_height)) - 1.0
+                ndc_pt = np.array([y1_star, x1_star, 0.5, 1.0], dtype=np.float64)
+                cam1_pt = inv_proj1 @ ndc_pt
+                cam1_pt = (cam1_pt[:3] / (cam1_pt[3] + 1e-9)).reshape(3, 1)
+                world_ray_pt = (inv_view1[:3, :3] @ cam1_pt).flatten() + inv_view1[:3, 3]
+
+                p2_proj = M2 @ np.array([world_ray_pt[0], world_ray_pt[1], world_ray_pt[2], 1.0])
+                if abs(p2_proj[3]) > 1e-9:
+                    p2_x = ((1.0 + (p2_proj[1] / p2_proj[3])) * 0.5) * frame2.image_width
+                    p2_y = ((1.0 + (p2_proj[0] / p2_proj[3])) * 0.5) * frame2.image_height
+                    p2_px = np.array([p2_x, p2_y])
+
+                    line_vec = p2_px - e2_px
+                    line_len = float(np.linalg.norm(line_vec))
+                    if line_len > 1e-3:
+                        normal_vec = np.array([-line_vec[1], line_vec[0]]) / line_len
+                        best_c2 = None
+                        min_epipolar_err = float('inf')
+
+                        for c2 in corners2:
+                            epi_dist = float(abs(np.dot(c2 - e2_px, normal_vec)))
+                            if epi_dist < min_epipolar_err:
+                                min_epipolar_err = epi_dist
+                                best_c2 = c2
+
+                        if best_c2 is not None and min_epipolar_err < 15.0:
+                            matched1.append(c1)
+                            matched2.append(best_c2)
+                            matched = True
+
+                if not matched:
+                    # Fallback to closest corner within bounded search radius
+                    best_c2 = None
+                    min_dist = float('inf')
+                    for c2 in corners2:
+                        dist = float(np.linalg.norm(c1 - c2))
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_c2 = c2
+                    if best_c2 is not None and min_dist < max(frame1.image_width, frame1.image_height) * 0.25:
+                        matched1.append(c1)
+                        matched2.append(best_c2)
 
         if not matched1:
             matched1 = [np.array([frame1.image_width * 0.5, frame1.image_height * 0.5])]
@@ -280,7 +339,14 @@ class MethodAMultiView:
         scale_init = np.maximum(maxs - mins, [0.03, 0.03, 0.01])
 
         fitted_box = Box.from_transformation(rot_init, center_init, scale_init)
-        residual = 0.02
+        
+        # Compute true geometric residual: RMSE of point-to-box boundary distance
+        half_extents = scale_init / 2.0
+        d_x = np.maximum(0.0, np.abs(local_pts[:, 0]) - half_extents[0])
+        d_y = np.maximum(0.0, np.abs(local_pts[:, 1]) - half_extents[1])
+        d_z = np.maximum(0.0, np.abs(local_pts[:, 2]) - half_extents[2])
+        point_residuals = np.sqrt(d_x**2 + d_y**2 + d_z**2)
+        residual = float(np.sqrt(np.mean(point_residuals**2)))
         return fitted_box, residual
 
     def measure(

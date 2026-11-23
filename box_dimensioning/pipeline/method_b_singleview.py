@@ -193,17 +193,21 @@ class MethodBSingleView:
             fitted_box = Box.from_transformation(rot, center_3d, scale)
             fit_residual = 0.025
         else:
-            # Fallback based on sparse point cloud median
+            # Fallback based on sparse point cloud bounds
             if len(sparse_pts) >= 4:
                 center_3d = np.median(sparse_pts, axis=0)
                 diffs = np.percentile(sparse_pts, 90, axis=0) - np.percentile(sparse_pts, 10, axis=0)
                 scale = np.maximum(diffs, [0.05, 0.03, 0.02])
+                rot = frame.transform[:3, :3]
+                fitted_box = Box.from_transformation(rot, center_3d, scale)
+                fit_residual = 0.045
             else:
-                center_3d = frame.transform[:3, 3] + frame.transform[:3, 2] * 0.6
-                scale = np.array([0.20, 0.15, 0.05])
-            rot = frame.transform[:3, :3]
-            fitted_box = Box.from_transformation(rot, center_3d, scale)
-            fit_residual = 0.045
+                # Honest failure: neither ground plane intersection nor point cloud provided enough geometry
+                center_3d = frame.transform[:3, 3] + frame.transform[:3, 2] * 0.5
+                scale = np.array([0.01, 0.01, 0.01])
+                rot = frame.transform[:3, :3]
+                fitted_box = Box.from_transformation(rot, center_3d, scale)
+                fit_residual = 0.999  # Triggers Quality Gate rejection for insufficient geometry
 
         final_quality = self.quality_gate.validate_measurement(q_report, fit_residual=fit_residual)
         lat_sec = float(time.perf_counter() - t_start)

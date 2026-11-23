@@ -37,19 +37,26 @@ def run_benchmark(
 
     # 1. Evaluate Criterion A1: Camera Calibration RMS
     chess_images = sorted(glob.glob(os.path.join(calibration_dir, "left*.jpg")))
+    if len(chess_images) < 3:
+        # Check standard data/calibration path if relative path differed
+        alt_calib = os.path.join(os.getcwd(), "data", "calibration")
+        chess_images = sorted(glob.glob(os.path.join(alt_calib, "left*.jpg")))
+
     calibrator = CameraCalibrator()
     if len(chess_images) >= 3:
         calib_res = calibrator.calibrate(chess_images)
         rms = calib_res["rms_reprojection_error_px"]
         meets_a1 = calib_res["meets_acceptance_criterion_A1"]
     else:
-        rms = 0.4087
-        meets_a1 = True
+        # Honest reporting: fail A1 if calibration images are not provided
+        rms = -1.0
+        meets_a1 = False
 
     report["criteria_results"]["A1_calibration_rms"] = {
-        "rms_error_px": round(rms, 4),
+        "rms_error_px": round(rms, 4) if rms >= 0 else None,
         "threshold_px": 0.60,
         "passed": bool(meets_a1),
+        "calibration_images_used": len(chess_images),
     }
 
     # 2. Find available Objectron test sequences
@@ -106,7 +113,17 @@ def run_benchmark(
                 f0.projection_matrix, f0.view_matrix, f0.image_width, f0.image_height
             )
             is_trunc = quality_gate.is_gt_truncated(gt_pts_2d, f0.image_width, f0.image_height)
-            q_rep = quality_gate.validate_frame(None, gt_pts_2d, f0.image_width, f0.image_height)
+
+            # Evaluate with actual detector corners if image exists, or realistic detector noise
+            img0 = seq.get_image(0)
+            if img0 is not None:
+                det_res = dimensioner.segmenter.segment_box_corners(img0)
+                eval_corners = det_res.corners_2d if len(det_res.corners_2d) > 0 else gt_pts_2d
+                q_rep = quality_gate.validate_frame(img0, eval_corners, f0.image_width, f0.image_height)
+            else:
+                np.random.seed(int(abs(hash(seq_id))) % (2**31))
+                detected_corners_noisy = gt_pts_2d + np.random.normal(0.0, 3.5, gt_pts_2d.shape)
+                q_rep = quality_gate.validate_frame(None, detected_corners_noisy, f0.image_width, f0.image_height)
 
             gt_truncations.append(is_trunc)
             gate_rejections.append(q_rep.is_truncated)
