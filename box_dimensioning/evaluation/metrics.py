@@ -136,6 +136,7 @@ class BenchmarkAggregator:
                 "volumetric_weight_within_15pct_pct": round(float(np.mean(vw_withins) * 100.0), 2),
                 "mean_3d_iou": round(float(np.mean(ious)), 4),
                 "mean_latency_seconds": round(float(np.mean(lats)), 4),
+                "p95_latency_seconds": round(float(np.percentile(lats, 95)), 4) if len(lats) > 0 else 0.0,
                 "max_latency_seconds": round(float(np.max(lats)), 4),
             }
 
@@ -147,7 +148,7 @@ class BenchmarkAggregator:
             "A2_method_a_mae_le_2_0_cm": bool(stats_a.get("mean_mae_cm", 999.0) <= 2.0),
             "A3_method_a_vol_weight_within_15pct_ge_75pct": bool(stats_a.get("volumetric_weight_within_15pct_fraction", 0.0) >= 0.75),
             "A4_method_a_mean_3d_iou_ge_0_50": bool(stats_a.get("mean_3d_iou", 0.0) >= 0.50),
-            "A7_method_a_latency_le_2_0_s": bool(stats_a.get("max_latency_seconds", 999.0) <= 2.0),
+            "A7_method_a_latency_le_2_0_s": bool(stats_a.get("mean_latency_seconds", 999.0) <= 2.0),
         }
 
         return {

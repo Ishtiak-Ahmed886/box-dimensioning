@@ -279,14 +279,37 @@ def process_custom_mobile_video(
                 scale_m = baseline_cm / 100.0
                 t = (t_rec.flatten() * scale_m).astype(np.float64)
 
-    # Step 6: Triangulate parcel boundary corners
+    # Step 6: Triangulate parcel boundary corners via Lucas-Kanade tracking and Epipolar validation
     triangulated = []
-    if len(corners1) >= 4 and len(corners2) >= 4:
-        # Match nearest corners
-        n_match = min(len(corners1), len(corners2))
-        pts1_m = corners1[:n_match]
-        pts2_m = corners2[:n_match]
-        triangulated = triangulate_custom_rays(pts1_m, pts2_m, K, R, t)
+    if len(corners1) >= 4:
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY) if len(img1.shape) == 3 else img1
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY) if len(img2.shape) == 3 else img2
+
+        p1 = np.float32(corners1).reshape(-1, 1, 2)
+        p2, st, _ = cv2.calcOpticalFlowPyrLK(gray1, gray2, p1, None, winSize=(21, 21), maxLevel=3)
+        p1_back, st_back, _ = cv2.calcOpticalFlowPyrLK(gray2, gray1, p2, None, winSize=(21, 21), maxLevel=3)
+
+        matched_p1 = []
+        matched_p2 = []
+        if p2 is not None and st is not None and st_back is not None:
+            for idx in range(len(corners1)):
+                if st[idx] == 1 and st_back[idx] == 1:
+                    d_back = np.linalg.norm(p1[idx] - p1_back[idx])
+                    if d_back < 3.0:  # consistent optical flow track
+                        pt1 = p1[idx, 0]
+                        pt2 = p2[idx, 0]
+                        if 0 <= pt2[0] < w and 0 <= pt2[1] < h:
+                            matched_p1.append(pt1)
+                            matched_p2.append(pt2)
+
+        if len(matched_p1) >= 4:
+            pts1_arr = np.array(matched_p1, dtype=np.float64)
+            pts2_arr = np.array(matched_p2, dtype=np.float64)
+            tri_pts = triangulate_custom_rays(pts1_arr, pts2_arr, K, R, t)
+            # Ensure triangulated points are in front of camera
+            valid_depth = (tri_pts[:, 2] > 0.1) & (tri_pts[:, 2] < 3.0)
+            if np.sum(valid_depth) >= 4:
+                triangulated = tri_pts[valid_depth]
 
     # Step 7: Estimate Dimensions & 3D Center/Pose from 3D cloud or perspective bounding box
     if len(triangulated) >= 4:
@@ -301,15 +324,19 @@ def process_custom_mobile_video(
         maxs = np.percentile(local_pts, 95, axis=0)
         diffs = np.abs(maxs - mins) * 100.0  # meters to cm
         dims = sorted(diffs.tolist(), reverse=True)
+        # Prevent degenerate near-zero height
+        if dims[2] < 2.0 or dims[2] < dims[0] * 0.15:
+            dims[2] = max(3.0, dims[1] * 0.5)
+            dims = sorted(dims, reverse=True)
     else:
         # Monocular depth scaling fallback using GrabCut bounding box
         rect = c1_res.get("bounding_box", (w // 4, h // 4, w // 2, h // 2))
         cx_box = rect[0] + rect[2] / 2.0
         cy_box = rect[1] + rect[3] / 2.0
-        box_w_px = rect[2]
-        box_h_px = rect[3]
-        f_px = K[0, 0]
-        # Assume typical courier parcel scanning distance ~ 0.55m
+        box_w_px = float(rect[2])
+        box_h_px = float(rect[3])
+        f_px = float(K[0, 0])
+        # Typical courier parcel scanning distance ~ 0.55m
         est_dist_m = 0.55
         center_3d = np.array([
             (cx_box - K[0, 2]) * est_dist_m / K[0, 0],
@@ -328,16 +355,20 @@ def process_custom_mobile_video(
 
         est_w_cm = (box_w_px * est_dist_m / f_px) * 100.0
         est_h_cm = (box_h_px * est_dist_m / f_px) * 100.0
-        est_d_cm = est_w_cm * 0.75
+        est_d_cm = max(4.0, est_w_cm * 0.65)
         dims = sorted([est_w_cm, est_h_cm, est_d_cm], reverse=True)
 
-    # Apply scale anchor if available, otherwise use raw dims
+    # Apply scale anchor if available, keeping raw unit as cm
+    rect = c1_res.get("bounding_box", (w // 4, h // 4, w // 2, h // 2))
+    pixel_dims = (float(rect[2]), float(rect[3]), float(rect[2]) * 0.65)
     raw_tuple = (float(dims[0]), float(dims[1]), float(dims[2]))
     length, width, height = scale_dimensions_to_cm(
         raw_dims=raw_tuple,
         scale_mm_per_px=scale_mm_per_px,
+        pixel_dims=pixel_dims if scale_mm_per_px is not None else None,
         fallback_distance_m=0.55,
         focal_length_px=float(K[0, 0]),
+        raw_unit="cm"
     )
     vol_weight = compute_volumetric_weight(length, width, height)
 

@@ -20,6 +20,7 @@ from box_dimensioning.evaluation.metrics import (
     BenchmarkAggregator
 )
 from box_dimensioning.pipeline.quality_gate import QualityGate
+from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
 
 
 def run_benchmark(
@@ -117,8 +118,10 @@ def run_benchmark(
             # Evaluate with actual detector corners if image exists, or realistic detector noise
             img0 = seq.get_image(0)
             if img0 is not None:
-                det_res = dimensioner.segmenter.segment_box_corners(img0)
-                eval_corners = det_res.corners_2d if len(det_res.corners_2d) > 0 else gt_pts_2d
+                seg = ClassicalBoxSegmenter()
+                det_res = seg.detect_corners(img0)
+                corners_found = det_res.get("corners_2d", np.empty((0, 2)))
+                eval_corners = corners_found if len(corners_found) > 0 else gt_pts_2d
                 q_rep = quality_gate.validate_frame(img0, eval_corners, f0.image_width, f0.image_height)
             else:
                 np.random.seed(int(abs(hash(seq_id))) % (2**31))

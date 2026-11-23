@@ -1,6 +1,6 @@
 # Box Dimensioning & Volumetric-Weight Billing: Benchmark Report
 
-**Generated:** 2026-11-16T05:50:19Z
+**Generated:** 2026-11-23T04:47:44Z
 
 ## Acceptance Criteria Compliance (A1 - A7)
 
@@ -12,7 +12,7 @@
 | **A4: Method A 3D IoU** | Mean IoU >= 0.50 | 0.8851 | PASSED |
 | **A5: Method B Comparison** | Full comparative eval | MAE 29.237 cm, IoU 0.0513 | PASSED |
 | **A6: Quality Gate** | TPR >= 90%, FPR <= 10% | TPR: 100.0%, FPR: 0.0% | PASSED |
-| **A7: Method A Latency** | <= 2.0 s per meas | 0.0353 s | PASSED |
+| **A7: Method A Latency** | <= 2.0 s per meas | 0.0943 s | PASSED |
 
 ## Method Comparison (Method A vs. Method B)
 
@@ -21,7 +21,7 @@
 | **Mean Absolute Error (MAE)** | 0.646 cm | 29.237 cm |
 | **Vol-Weight Within 15%** | 82.0% | 6.0% |
 | **Mean 3D IoU** | 0.8851 | 0.0513 |
-| **Mean Latency (CPU)** | 0.0353 s | 0.0057 s |
+| **Mean Latency (CPU)** | 0.0943 s | 0.0228 s |
 
 ### Key Failure Modes & Practical Insights
 - **Printed Box Artwork**: High-contrast labels (e.g. cereal box logos, nutrition tables) create strong interior edges. Bilateral filtering and convex hull boundary analysis suppress interior false lines.

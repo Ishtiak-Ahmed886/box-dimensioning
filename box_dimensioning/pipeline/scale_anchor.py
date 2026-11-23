@@ -151,44 +151,84 @@ def compute_absolute_scale(
 
 def scale_dimensions_to_cm(
     raw_dims: Tuple[float, float, float],
-    scale_mm_per_px: Optional[float],
+    scale_mm_per_px: Optional[float] = None,
+    pixel_dims: Optional[Tuple[float, float, float]] = None,
     fallback_distance_m: float = 0.55,
     focal_length_px: float = 1000.0,
+    raw_unit: str = "cm",
 ) -> Tuple[float, float, float]:
     """
     Converts raw 3D measurement units to real-world cm using scale anchor.
 
     If scale_mm_per_px is provided (reference object detected):
-        → Apply directly: dim_cm = raw_px * scale_mm_per_px / 10
+        → If pixel_dims provided: dim_cm = px * scale_mm_per_px / 10
+        → Else if raw_unit == "px": dim_cm = raw_px * scale_mm_per_px / 10
+        → Else: preserves raw cm or scales from meters
     Else (no reference):
-        → Use monocular depth estimate: dim_cm = raw_m * 100
+        → If raw_unit == "cm": dimensions are already in cm (no extra scaling)
+        → If raw_unit == "m": converts meters to cm (raw_m * 100)
+        → If raw_unit == "px": uses pinhole monocular fallback: (px * dist / f) * 100
 
     Args:
-        raw_dims: (L, W, H) in meters (from SfM) or pixels (from 2D estimate)
+        raw_dims: (L, W, H) in raw_unit
         scale_mm_per_px: mm per pixel from reference object (or None)
-        fallback_distance_m: assumed scanning distance if no reference
+        pixel_dims: optional (W_px, H_px, D_px) in pixels
+        fallback_distance_m: assumed scanning distance if no reference (~0.55m)
         focal_length_px: camera focal length in pixels (for fallback)
+        raw_unit: unit of raw_dims ("cm", "m", or "px")
 
     Returns:
-        (length_cm, width_cm, height_cm)
+        (length_cm, width_cm, height_cm) sorted (L >= W >= H) and clamped to realistic courier parcel bounds.
     """
-    l_raw, w_raw, h_raw = raw_dims
-
     if scale_mm_per_px is not None and scale_mm_per_px > 0:
-        # Reference-anchored: raw values treated as pixels on the sensor
-        length_cm = l_raw * scale_mm_per_px / 10.0
-        width_cm  = w_raw * scale_mm_per_px / 10.0
-        height_cm = h_raw * scale_mm_per_px / 10.0
+        if pixel_dims is not None and len(pixel_dims) >= 2:
+            l_px = float(pixel_dims[0])
+            w_px = float(pixel_dims[1])
+            h_px = float(pixel_dims[2]) if len(pixel_dims) > 2 else min(l_px, w_px) * 0.65
+            length_cm = float(l_px * scale_mm_per_px / 10.0)
+            width_cm  = float(w_px * scale_mm_per_px / 10.0)
+            height_cm = float(h_px * scale_mm_per_px / 10.0)
+        elif raw_unit == "px":
+            l_raw, w_raw, h_raw = raw_dims
+            length_cm = float(l_raw * scale_mm_per_px / 10.0)
+            width_cm  = float(w_raw * scale_mm_per_px / 10.0)
+            height_cm = float(h_raw * scale_mm_per_px / 10.0)
+        elif raw_unit == "m":
+            length_cm = float(raw_dims[0] * 100.0)
+            width_cm  = float(raw_dims[1] * 100.0)
+            height_cm = float(raw_dims[2] * 100.0)
+        else:
+            length_cm = float(raw_dims[0])
+            width_cm  = float(raw_dims[1])
+            height_cm = float(raw_dims[2])
     else:
-        # Monocular fallback: treat raw as meters from SfM
-        length_cm = l_raw * 100.0
-        width_cm  = w_raw * 100.0
-        height_cm = h_raw * 100.0
+        if raw_unit == "cm":
+            length_cm = float(raw_dims[0])
+            width_cm  = float(raw_dims[1])
+            height_cm = float(raw_dims[2])
+        elif raw_unit == "m":
+            length_cm = float(raw_dims[0] * 100.0)
+            width_cm  = float(raw_dims[1] * 100.0)
+            height_cm = float(raw_dims[2] * 100.0)
+        elif raw_unit == "px":
+            l_raw, w_raw, h_raw = raw_dims
+            f_safe = max(100.0, float(focal_length_px))
+            length_cm = float((l_raw * fallback_distance_m / f_safe) * 100.0)
+            width_cm  = float((w_raw * fallback_distance_m / f_safe) * 100.0)
+            height_cm = float((h_raw * fallback_distance_m / f_safe) * 100.0)
+        else:
+            length_cm = float(raw_dims[0])
+            width_cm  = float(raw_dims[1])
+            height_cm = float(raw_dims[2])
 
-    # Clamp to realistic parcel bounds
-    length_cm = float(np.clip(length_cm, 5.0, 200.0))
-    width_cm  = float(np.clip(width_cm,  4.0, 150.0))
-    height_cm = float(np.clip(height_cm, 2.0, 100.0))
+    # Sort so length >= width >= height
+    sorted_dims = sorted([length_cm, width_cm, height_cm], reverse=True)
+    length_cm, width_cm, height_cm = sorted_dims[0], sorted_dims[1], sorted_dims[2]
+
+    # Clamp to realistic courier parcel bounds
+    length_cm = float(np.clip(length_cm, 5.0, 120.0))
+    width_cm  = float(np.clip(width_cm,  4.0, 100.0))
+    height_cm = float(np.clip(height_cm, 2.0, 80.0))
 
     return length_cm, width_cm, height_cm
 
