@@ -158,11 +158,11 @@ class BoxDimensioner:
         target_frame_idx = res.reprojected_frame_index
         target_img = images.get(target_frame_idx) if images else None
 
-        if target_img is None and output_image_path is not None:
-            # Create synthetic canvas with resolution of the frame
-            f_geom = sequence.get_frame(target_frame_idx)
-            target_img = np.zeros((f_geom.image_height, f_geom.image_width, 3), dtype=np.uint8)
+        # Look up true original video frame from the sequence if not explicitly passed
+        if target_img is None:
+            target_img = sequence.get_image(target_frame_idx)
 
+        # If original frame is available, render true 3D wireframe overlay on the real frame
         if target_img is not None and res.reprojected_wireframe_2d is not None and output_image_path is not None:
             annotated_img = render_wireframe_with_overlay(
                 image=target_img,
@@ -177,5 +177,8 @@ class BoxDimensioner:
             os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
             cv2.imwrite(output_image_path, annotated_img)
             output["reprojection_image_path"] = output_image_path
+        else:
+            # Honest reporting: do NOT create fake black image
+            output["reprojection_image_path"] = None
 
         return output

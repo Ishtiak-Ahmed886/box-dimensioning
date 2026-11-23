@@ -75,8 +75,93 @@ with tab_live:
         if not available_seqs:
             available_seqs = ["cereal_box/batch-26/22"]
 
+        # Prioritize sequences that have video or frames available locally
+        def _has_media(s_id: str) -> bool:
+            sp = os.path.join(base_data_dir, s_id)
+            has_vid = any(os.path.isfile(os.path.join(sp, v)) for v in ["video.MOV", "video.mp4", "video.mov"])
+            has_fr = os.path.isdir(os.path.join(sp, "frames")) and len(os.listdir(os.path.join(sp, "frames"))) > 0
+            return has_vid or has_fr
+
+        available_seqs.sort(key=lambda s: (0 if _has_media(s) else 1, s))
+
         selected_seq_id = st.selectbox("Select Sequence:", available_seqs, index=0)
         active_seq_dir = os.path.join(base_data_dir, selected_seq_id)
+
+        # ── Video & Frame Preview Component ─────────────────────────────────────
+        seq_video_path = None
+        for vname in ["video.MOV", "video.mp4", "video.mov"]:
+            cand = os.path.join(active_seq_dir, vname)
+            if os.path.isfile(cand) and os.path.getsize(cand) > 10000:
+                seq_video_path = cand
+                break
+
+        seq_frames = []
+        frames_dir = os.path.join(active_seq_dir, "frames")
+        if os.path.isdir(frames_dir):
+            for fname in sorted(os.listdir(frames_dir)):
+                if fname.lower().endswith((".jpg", ".png", ".jpeg")):
+                    fp = os.path.join(frames_dir, fname)
+                    img = cv2.imread(fp)
+                    if img is not None:
+                        seq_frames.append((fname, img))
+
+        # Extract sample keyframes if video is present and frames dir is empty
+        if seq_video_path and not seq_frames:
+            try:
+                cap = cv2.VideoCapture(seq_video_path)
+                tot = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                if tot > 0:
+                    os.makedirs(frames_dir, exist_ok=True)
+                    for f_idx in [0, tot // 4, tot // 2, max(0, tot - 1)]:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+                        ret, f_img = cap.read()
+                        if ret and f_img is not None:
+                            fname = f"frame_{f_idx:03d}.jpg"
+                            cv2.imwrite(os.path.join(frames_dir, fname), f_img)
+                            seq_frames.append((fname, f_img))
+                cap.release()
+            except Exception:
+                pass
+
+        # Attempt on-demand download from official Google Objectron GCS if not present
+        if not seq_video_path and not seq_frames:
+            dest_vid = os.path.join(active_seq_dir, "video.MOV")
+            gcs_url = f"https://storage.googleapis.com/objectron/videos/{selected_seq_id}/video.MOV"
+            try:
+                import urllib.request
+                req = urllib.request.Request(gcs_url, method="HEAD")
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    if resp.status == 200:
+                        with st.spinner(f"📥 Downloading original sequence video for {selected_seq_id} from Google Objectron repository..."):
+                            urllib.request.urlretrieve(gcs_url, dest_vid)
+                        if os.path.isfile(dest_vid) and os.path.getsize(dest_vid) > 10000:
+                            seq_video_path = dest_vid
+            except Exception:
+                pass
+
+        # Render preview UI
+        if seq_video_path:
+            st.markdown("##### 🎬 Original Sequence Video Preview")
+            with open(seq_video_path, "rb") as vf:
+                st.video(vf.read(), format="video/mp4")
+            if seq_frames:
+                with st.expander("🖼️ View Original Frame Samples", expanded=False):
+                    f_cols = st.columns(min(4, len(seq_frames)))
+                    for i, (fn, fimg) in enumerate(seq_frames[:4]):
+                        with f_cols[i % len(f_cols)]:
+                            st.image(cv2.cvtColor(fimg, cv2.COLOR_BGR2RGB), caption=fn, use_container_width=True)
+        elif seq_frames:
+            st.markdown("##### 📸 Original Sequence Keyframes")
+            f_cols = st.columns(min(4, len(seq_frames)))
+            for i, (fn, fimg) in enumerate(seq_frames[:4]):
+                with f_cols[i % len(f_cols)]:
+                    st.image(cv2.cvtColor(fimg, cv2.COLOR_BGR2RGB), caption=fn, use_container_width=True)
+        else:
+            st.error(
+                f"❌ No original video or frame images available for '{selected_seq_id}'. "
+                f"Synthetic or black previews are not shown to preserve ground-truth integrity. "
+                f"Please choose a sequence with available video (e.g. cereal_box/batch-5/28 or cereal_box/batch-26/22)."
+            )
 
         if st.button("🚀 Measure Package Live", type="primary", key="btn_measure_dataset"):
             if not os.path.isdir(active_seq_dir):
@@ -97,12 +182,14 @@ with tab_live:
 
                 with col_hud:
                     st.subheader("📸 Video Frame with Reprojected 3D Wireframe")
-                    if os.path.isfile(out_img_path):
-                        img_bgr = cv2.imread(out_img_path)
-                        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-                        st.image(img_rgb, use_container_width=True)
+                    reproj_path = res.get("reprojection_image_path")
+                    if reproj_path and os.path.isfile(reproj_path):
+                        img_bgr = cv2.imread(reproj_path)
+                        if img_bgr is not None:
+                            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                            st.image(img_rgb, use_container_width=True, caption=f"Original Frame with Reprojected 3D Wireframe")
                     else:
-                        st.info("No frame image available; rendered wireframe telemetry.")
+                        st.error("❌ No original video frame available to overlay the 3D cuboid wireframe. Black canvas is suppressed.")
 
                 with col_stats:
                     st.subheader("📋 Courier Billing & Measurement Output")
