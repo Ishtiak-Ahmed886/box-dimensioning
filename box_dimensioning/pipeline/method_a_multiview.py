@@ -200,9 +200,15 @@ class MethodAMultiView:
                     _, inliers = cv2.findFundamentalMat(src_pts, dst_pts, cv2.FM_RANSAC, 3.0, 0.99)
                     if inliers is not None:
                         idx_inliers = np.where(inliers.ravel() == 1)[0]
+                        hull1 = cv2.convexHull(np.int32(corners1)) if len(corners1) >= 4 else None
                         for idx in idx_inliers:
-                            matched1.append(src_pts[idx])
-                            matched2.append(dst_pts[idx])
+                            p1 = src_pts[idx]
+                            p2 = dst_pts[idx]
+                            # Only accept feature points located on or within the box region
+                            if hull1 is not None and cv2.pointPolygonTest(hull1, (float(p1[0]), float(p1[1])), True) < -25.0:
+                                continue
+                            matched1.append(p1)
+                            matched2.append(p2)
 
         # If both are 9 ordered keypoints, match directly
         if len(corners1) == 9 and len(corners2) == 9:
@@ -301,23 +307,16 @@ class MethodAMultiView:
             except Exception:
                 pass
 
-        all_pts = []
-        if len(points_3d) > 0:
-            all_pts.append(points_3d)
-        if sparse_points is not None and len(sparse_points) > 0:
-            all_pts.append(sparse_points)
-
-        if not all_pts:
-            default_scale = np.array([0.20, 0.15, 0.05])
+        if len(points_3d) >= 4:
+            pts = points_3d
+        elif sparse_points is not None and len(sparse_points) >= 4:
+            pts = sparse_points
+        elif len(points_3d) > 0:
+            pts = points_3d
+        else:
+            default_scale = np.array([0.05, 0.05, 0.05])
             box = Box.from_transformation(np.eye(3), np.array([0.0, 0.0, 0.5]), default_scale)
-            return box, 0.05
-
-        pts = np.vstack(all_pts)
-        med = np.median(pts, axis=0)
-        dists = np.linalg.norm(pts - med, axis=1)
-        valid = pts[dists < 0.6]
-        if len(valid) >= 4:
-            pts = valid
+            return box, 0.999
 
         center_init = np.median(pts, axis=0)
 

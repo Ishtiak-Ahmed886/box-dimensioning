@@ -132,16 +132,6 @@ class ObjectronSequence:
                 noise = rng.normal(0.0, 2.0, pts.shape)
                 return pts + noise
 
-        # Fallback to projecting ground truth box if present with 2px detector noise
-        if self.ground_truth is not None and index < len(self.frames):
-            f = self.get_frame(index)
-            proj = self.ground_truth.box_3d.project_to_image(
-                f.projection_matrix, f.view_matrix, f.image_width, f.image_height
-            )
-            rng = np.random.RandomState(42 + index)
-            noise = rng.normal(0.0, 2.0, proj.shape)
-            return proj + noise
-
         return np.empty((0, 2), dtype=np.float64)
 
 

@@ -35,6 +35,14 @@ def render_wireframe_with_overlay(
         thickness=3
     )
 
+    # Highlight all eight projected 3D cuboid corners (keypoints 1 through 8)
+    pts_int = np.asarray(projected_wireframe_2d, dtype=np.int32)
+    for c_i in range(1, min(9, len(pts_int))):
+        pt = tuple(pts_int[c_i])
+        cv2.circle(annotated, pt, 7, (0, 0, 0), -1)
+        cv2.circle(annotated, pt, 5, (0, 255, 255), -1)
+        cv2.putText(annotated, f"C{c_i}", (pt[0] + 6, pt[1] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+
     h, w = annotated.shape[:2]
     card_w, card_h = min(540, w - 20), 220
     overlay = annotated.copy()
@@ -114,6 +122,9 @@ class BoxDimensioner:
             },
             "selected_frames": res.selected_frame_indices,
             "latency_seconds": res.latency_seconds,
+            "reprojected_frame_index": res.reprojected_frame_index,
+            "reprojected_wireframe_2d": res.reprojected_wireframe_2d,
+            "measured_box_3d": res.measured_box_3d,
         }
 
         # Compare with ground-truth for evaluation (ground truth NEVER used at inference)

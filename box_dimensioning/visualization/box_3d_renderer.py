@@ -173,13 +173,13 @@ def create_interactive_3d_plotly_figure(
         hoverinfo='skip'
     ))
 
-    # 2. 12 3D Wireframe Edges
+    # 2. 12 3D Wireframe Edges (4 Bottom + 4 Top + 4 Vertical Pillars)
     edges = [
-        # Bottom
+        # Bottom face edges (4)
         (0, 1), (1, 2), (2, 3), (3, 0),
-        # Top
+        # Top face edges (4)
         (4, 5), (5, 6), (6, 7), (7, 4),
-        # Pillars
+        # Vertical pillar edges (4)
         (0, 4), (1, 5), (2, 6), (3, 7)
     ]
 
@@ -195,21 +195,34 @@ def create_interactive_3d_plotly_figure(
         x=edge_x, y=edge_y, z=edge_z,
         mode='lines',
         line=dict(color='#00ff88', width=5),
-        name='3D Wireframe Edges',
+        name='12 Cuboid Edges (Green)',
         hoverinfo='skip'
     ))
 
-    # 3. 8 3D Corner Spheres with Hover Tooltips
-    labels = [f"V{idx}: ({x[idx]:.1f}, {y[idx]:.1f}, {z[idx]:.1f}) cm" for idx in range(8)]
+    # 3. 8 3D Vertices (V1 - V8) with Coordinates Tooltips
+    labels = [f"Vertex V{idx+1}: ({x[idx]:.1f}, {y[idx]:.1f}, {z[idx]:.1f}) cm" for idx in range(8)]
     fig.add_trace(go.Scatter3d(
         x=x, y=y, z=z,
         mode='markers+text',
-        marker=dict(size=6, color='red'),
-        text=[f"V{idx}" for idx in range(8)],
+        marker=dict(size=7, color='#ff0055', line=dict(color='white', width=1)),
+        text=[f"V{idx+1}" for idx in range(8)],
         textposition="top center",
         hovertext=labels,
         hoverinfo="text",
-        name='3D Vertices'
+        name='8 Vertices (V1 - V8)'
+    ))
+
+    # 4. Dimension Dimension Labels (Length, Width, Height)
+    fig.add_trace(go.Scatter3d(
+        x=[l / 2.0, l + max(2.0, w * 0.08), 0.0],
+        y=[-max(2.0, w * 0.08), w / 2.0, -max(2.0, w * 0.08)],
+        z=[0.0, 0.0, h / 2.0],
+        mode='text',
+        text=[f"<b>Length: {l:.1f} cm</b>", f"<b>Width: {w:.1f} cm</b>", f"<b>Height: {h:.1f} cm</b>"],
+        textposition="middle center",
+        textfont=dict(color=['#00e5ff', '#ffea00', '#ff007f'], size=12),
+        name='Metric Dimension Labels',
+        hoverinfo='skip'
     ))
 
     # Set up isometric camera viewpoint and layout

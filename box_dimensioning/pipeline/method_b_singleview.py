@@ -180,27 +180,42 @@ class MethodBSingleView:
             dim_x = float(np.percentile(local_pts[:, 0], 95) - np.percentile(local_pts[:, 0], 5))
             dim_z = float(np.percentile(local_pts[:, 1], 95) - np.percentile(local_pts[:, 1], 5))
 
-            # Height estimation via sparse points above ground plane
+            # Height estimation via sparse points above ground plane or vertical ray unprojection
+            dim_y = 0.0
             if len(sparse_pts) > 0:
                 heights = np.abs((sparse_pts - center_base) @ normal)
-                valid_h = heights[(heights > 0.01) & (heights < 0.40)]
-                dim_y = float(np.percentile(valid_h, 90)) if len(valid_h) > 0 else 0.05
-            else:
-                dim_y = 0.05
+                valid_h = heights[(heights > 0.01) & (heights < 0.45)]
+                if len(valid_h) >= 2:
+                    dim_y = float(np.percentile(valid_h, 90))
 
-            scale = np.maximum([dim_x, dim_y, dim_z], [0.03, 0.01, 0.03])
+            if dim_y <= 0.01:
+                # Geometric unprojection from 2D image corner span and camera distance
+                cam_pos = frame.transform[:3, 3]
+                dist_to_cam = float(np.linalg.norm(center_base - cam_pos))
+                f_y = float(frame.intrinsics[1, 1]) if frame.intrinsics.ndim == 2 else 1000.0
+                h_px = float(np.ptp(corners[:, 1])) if len(corners) > 0 else 0.0
+                dim_y = float((h_px * dist_to_cam) / max(100.0, f_y)) * 0.7
+
+            scale = np.maximum([dim_x, dim_y, dim_z], [0.03, 0.02, 0.03])
             center_3d = center_base + normal * (scale[1] / 2.0)
             fitted_box = Box.from_transformation(rot, center_3d, scale)
-            fit_residual = 0.025
+
+            # Calculate true geometric residual: RMSE of base points to fitted rectangle boundary
+            half_x, half_z = scale[0] / 2.0, scale[2] / 2.0
+            res_x = np.maximum(0.0, np.abs(local_pts[:, 0]) - half_x)
+            res_z = np.maximum(0.0, np.abs(local_pts[:, 1]) - half_z)
+            fit_residual = float(np.sqrt(np.mean(res_x**2 + res_z**2)))
         else:
-            # Fallback based on sparse point cloud bounds
-            if len(sparse_pts) >= 4:
+            # Fallback based on sparse point cloud bounds if available
+            if len(sparse_pts) >= 6:
                 center_3d = np.median(sparse_pts, axis=0)
                 diffs = np.percentile(sparse_pts, 90, axis=0) - np.percentile(sparse_pts, 10, axis=0)
                 scale = np.maximum(diffs, [0.05, 0.03, 0.02])
                 rot = frame.transform[:3, :3]
                 fitted_box = Box.from_transformation(rot, center_3d, scale)
-                fit_residual = 0.045
+                # Compute point dispersion residual
+                dists = np.linalg.norm(sparse_pts - center_3d, axis=1)
+                fit_residual = float(np.std(dists))
             else:
                 # Honest failure: neither ground plane intersection nor point cloud provided enough geometry
                 center_3d = frame.transform[:3, 3] + frame.transform[:3, 2] * 0.5
