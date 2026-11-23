@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=200&section=header&text=Box%20Dimensioner&fontSize=52&fontColor=fff&animation=twinkling&fontAlignY=36&desc=Measure%20any%20parcel%20with%20your%20phone%20camera%20%F0%9F%93%A6&descAlignY=58&descSize=18" width="100%"/>
 
@@ -40,6 +40,33 @@
 | 4️⃣ | **Scale Anchor** | A4 paper / Credit card for absolute metric scale |
 | 5️⃣ | **Quality Gate** | Auto-reject blurry / truncated / bad-baseline frames |
 | 6️⃣ | **3D Wireframe HUD** | Interactive Plotly WebGL digital twin overlay |
+
+---
+
+## 📸 4-Stage Detection & 3D Reprojection Pipeline
+
+<div align="center">
+
+| Stage 1: Original Frame | Stage 2: YOLO Bounding Box | Stage 3: Detected 2D Corners | Stage 4: Reprojected 3D Cuboid (1-8 Badges) |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/images/stage1_original_frame.jpg" width="220"/> | <img src="docs/images/stage2_yolo_bbox.jpg" width="220"/> | <img src="docs/images/stage3_detected_corners2d.jpg" width="220"/> | <img src="docs/images/stage4_reprojected_cuboid3d.jpg" width="220"/> |
+| *Raw Video Frame* | *2D ROI Detection* | *Direct Corner Points (D1-D8)* | *12 Green Edges & 1-8 Numbered Markers* |
+
+</div>
+
+### 📍 Calculated Corner Coordinates (Real Sequence Evaluation)
+
+| Corner ID | X Pixel | Y Pixel | Point Type |
+| :--- | :---: | :---: | :--- |
+| **Corner 1** | **562.2** | **1003.9** | Geometrically Projected 3D Corner |
+| **Corner 2** | **618.8** | **1101.8** | Geometrically Projected 3D Corner |
+| **Corner 3** | **470.9** | **1048.4** | Geometrically Projected 3D Corner |
+| **Corner 4** | **531.2** | **1153.5** | Geometrically Projected 3D Corner |
+| **Corner 5** | **834.3** | **821.6** | Geometrically Projected 3D Corner |
+| **Corner 6** | **902.3** | **935.7** | Geometrically Projected 3D Corner |
+| **Corner 7** | **748.8** | **859.1** | Geometrically Projected 3D Corner |
+| **Corner 8** | **822.1** | **983.2** | Geometrically Projected 3D Corner |
+| **Center** | **676.1** | **994.8** | 3D Centroid Projection |
 
 ---
 
