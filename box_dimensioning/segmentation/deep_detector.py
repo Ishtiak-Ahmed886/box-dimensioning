@@ -8,6 +8,7 @@ Improvements over classical edge + contour detection:
 Returns 8 projected corner points (2D) + confidence score per detection.
 """
 
+import os
 from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
@@ -113,6 +114,63 @@ class DeepBoxDetector:
         self.conf_threshold = conf_threshold
         self._onnx_session = None
         self._onnx_tried = False
+        self._custom_yolo = None
+        self._custom_yolo_tried = False
+
+    def _load_custom_yolo(self) -> bool:
+        """Loads custom fine-tuned YOLO box detector if available."""
+        if self._custom_yolo is not None:
+            return True
+        if self._custom_yolo_tried:
+            return False
+        self._custom_yolo_tried = True
+        custom_weights = os.path.join("models", "custom_box_yolo.pt")
+        if os.path.isfile(custom_weights):
+            try:
+                # Direct Ultralytics config to workspace to avoid sandbox permission errors
+                cfg_dir = os.path.abspath(".ultralytics")
+                os.makedirs(cfg_dir, exist_ok=True)
+                os.environ["YOLO_CONFIG_DIR"] = cfg_dir
+
+                from ultralytics import YOLO
+                self._custom_yolo = YOLO(custom_weights)
+                print(f"[DeepBoxDetector] Loaded custom box YOLO detector from {custom_weights}")
+                return True
+            except Exception as e:
+                print(f"[DeepBoxDetector] Failed to load custom YOLO weights: {e}")
+        return False
+
+    def _detect_custom_yolo(self, image: np.ndarray) -> Optional[Dict]:
+        """Runs custom fine-tuned YOLO box detector on image."""
+        try:
+            results = self._custom_yolo(image, conf=self.conf_threshold, verbose=False)
+            if results and len(results) > 0 and len(results[0].boxes) > 0:
+                boxes = results[0].boxes
+                best_box = None
+                best_conf = -1.0
+                for b in boxes:
+                    conf = float(b.conf[0])
+                    if conf > best_conf:
+                        best_conf = conf
+                        best_box = b
+
+                if best_box is not None:
+                    coords = [int(v) for v in best_box.xyxy[0].tolist()]
+                    x1, y1, x2, y2 = coords
+                    bbox = (x1, y1, x2 - x1, y2 - y1)
+                    corners = self._bbox_to_corners(x1, y1, x2, y2)
+                    return {
+                        "corners_2d": corners,
+                        "bounding_rect": bbox,
+                        "bounding_box": bbox,
+                        "confidence": best_conf,
+                        "class_id": 0,
+                        "method": "custom_trained_yolo_box",
+                        "mask": self._make_mask(image.shape[:2], x1, y1, x2, y2),
+                    }
+        except Exception as e:
+            print(f"[DeepBoxDetector] Custom YOLO prediction error: {e}")
+        return None
 
     def _load_onnx(self) -> bool:
         """Lazily loads YOLOv8-nano ONNX model, returns True if successful."""
@@ -149,10 +207,18 @@ class DeepBoxDetector:
         """Main detection entry point. Returns corners_2d, bbox, confidence, method."""
         h, w = image.shape[:2]
 
-        if self.use_deep and self._load_onnx():
-            result = self._detect_yolo(image)
-            if result is not None:
-                return result
+        if self.use_deep:
+            # Priority 1: Custom fine-tuned YOLO box detector
+            if self._load_custom_yolo():
+                res = self._detect_custom_yolo(image)
+                if res is not None:
+                    return res
+
+            # Priority 2: General YOLOv8-nano ONNX
+            if self._load_onnx():
+                result = self._detect_yolo(image)
+                if result is not None:
+                    return result
 
         # Classical fallback with Hough line intersections
         return self._detect_classical_improved(image)

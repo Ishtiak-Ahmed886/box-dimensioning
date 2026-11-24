@@ -13,3 +13,8 @@ TrueDeed_*
 !docs/images/*.png
 site_summary.txt
 *.html
+.ultralytics/
+runs/
+data/dataset_box/
+yolov8n.pt
+camera_live_evidence/
