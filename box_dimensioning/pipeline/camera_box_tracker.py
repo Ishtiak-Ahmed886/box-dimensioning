@@ -320,24 +320,26 @@ class CameraBoxTracker:
         """
         img_h, img_w = image.shape[:2]
 
-        # 1. Try deep detector if available
+        # 1. Try deep detector (custom YOLO box model or ONNX)
         deep_res = None
         try:
-            if self.detector.use_deep and self.detector._load_onnx():
-                deep_res = self.detector._detect_yolo(image)
+            if self.detector.use_deep:
+                deep_res = self.detector.detect(image)
         except Exception:
             deep_res = None
 
-        if deep_res is not None and "bounding_rect" in deep_res:
-            bx, by, bw, bh = deep_res["bounding_rect"]
-            # Validate bounding rect
-            if bw >= 20 and bh >= 20:
+        if deep_res is not None and ("bounding_rect" in deep_res or "bounding_box" in deep_res):
+            b_tuple = deep_res.get("bounding_box", deep_res.get("bounding_rect"))
+            bx, by, bw, bh = b_tuple
+            conf = deep_res.get("confidence", 0.8)
+            # Only accept if box meets minimum dimensions and is from custom YOLO or good confidence
+            if bw >= 20 and bh >= 20 and conf >= 0.30:
                 corners_8 = self._infer_8_corners_from_bbox((bx, by, bw, bh), image)
                 return {
                     "bbox": (bx, by, bw, bh),
                     "corners_8_2d": corners_8,
-                    "confidence": deep_res.get("confidence", 0.8),
-                    "method": deep_res.get("method", "yolo_deep"),
+                    "confidence": conf,
+                    "method": deep_res.get("method", "custom_yolo"),
                 }
 
         # 2. Geometric contour & edge analysis

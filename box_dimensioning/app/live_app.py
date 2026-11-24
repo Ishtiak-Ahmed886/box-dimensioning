@@ -583,7 +583,7 @@ with tab_live:
         # Mode 1: Browser / Phone Camera input (Native HTML5 camera on Streamlit Cloud & Mobile)
         if "Browser / Phone" in cam_mode:
             st.subheader("📸 Browser Live Device Camera")
-            st.caption("Capture a box/parcel using your laptop webcam or phone camera directly from this web page:")
+            st.info("💡 **Instructions:** Place or hold a cardboard box, parcel, or rectangular container in clear view of your camera. Take a photo to detect its 3D wireframe and calculate dimensions.")
             photo = st.camera_input("Take a photo of the parcel/box")
             if photo is not None:
                 img_bytes = photo.getvalue()
@@ -603,11 +603,13 @@ with tab_live:
                     status_color = "🟢" if res["state"] == TrackingState.TRACKING else "🟡" if res["state"] == TrackingState.INITIALIZING else "🔴"
 
                     with metric_placeholder.container():
-                        m1, m2, m3, m4 = st.columns(4)
-                        m1.metric("Detection Status", f"{status_color} {res['state']}")
-                        m2.metric("FPS / Latency", f"{res['fps']:.1f} fps")
-                        m3.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
-                        m4.metric("Volumetric Weight", f"{vw:.3f} kg")
+                        row1_c1, row1_c2 = st.columns(2)
+                        row1_c1.metric("Status", f"{status_color} {res['state']}")
+                        row1_c2.metric("Speed", f"{res['fps']:.1f} FPS")
+
+                        row2_c1, row2_c2 = st.columns(2)
+                        row2_c1.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
+                        row2_c2.metric("Volumetric Weight", f"{vw:.3f} kg")
 
         # Mode 2 & 3: Continuous Stream (Local OpenCV Webcam or Simulation)
         elif run_tracker:
@@ -667,11 +669,13 @@ with tab_live:
                 status_color = "🟢" if res["state"] == TrackingState.TRACKING else "🟡" if res["state"] == TrackingState.INITIALIZING else "🔴"
 
                 with metric_placeholder.container():
-                    m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Tracker Status", f"{status_color} {res['state']}")
-                    m2.metric("FPS", f"{res['fps']:.1f}")
-                    m3.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
-                    m4.metric("Volumetric Weight", f"{vw:.3f} kg")
+                    r1_c1, r1_c2 = st.columns(2)
+                    r1_c1.metric("Status", f"{status_color} {res['state']}")
+                    r1_c2.metric("Speed", f"{res['fps']:.1f} FPS")
+
+                    r2_c1, r2_c2 = st.columns(2)
+                    r2_c1.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
+                    r2_c2.metric("Volumetric Weight", f"{vw:.3f} kg")
 
             if cap is not None and cap.isOpened():
                 cap.release()
