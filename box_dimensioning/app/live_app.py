@@ -555,20 +555,62 @@ with tab_live:
         cam_c1, cam_c2 = st.columns([1, 2])
         with cam_c1:
             st.markdown("### ⚙️ Camera & Tracker Controls")
-            cam_mode = st.radio("Camera Source:", ["Webcam (Device 0)", "Simulated Test Video Stream"])
+            cam_mode = st.radio(
+                "Camera Source:",
+                [
+                    "📸 Browser / Phone Camera (Cloud & Mobile)",
+                    "💻 Physical OpenCV Webcam (Local Desktop Device 0)",
+                    "🤖 Simulated Test Video Stream"
+                ],
+                index=0
+            )
             cam_dist = st.slider("Target Distance (cm):", 30.0, 150.0, 60.0, 5.0)
             cam_engine = st.selectbox("Tracking Engine:", ["mil", "optical_flow", "csrt", "kcf"], index=0)
             redetect_freq = st.slider("Re-detection Frequency (frames):", 5, 60, 15, 5)
 
-            run_tracker = st.toggle("▶️ Start Camera Tracking", value=False)
-            st.caption("Tip: You can also run the full native OpenCV desktop app via:")
+            if "Browser / Phone" not in cam_mode:
+                run_tracker = st.toggle("▶️ Start Camera Tracking", value=False)
+            else:
+                run_tracker = False
+
+            st.caption("Tip: For 60+ FPS continuous desktop tracking with OpenCV DirectShow:")
             st.code("python -m box_dimensioning.app.live_cam_tracker", language="bash")
 
         with cam_c2:
             frame_placeholder = st.empty()
             metric_placeholder = st.empty()
 
-        if run_tracker:
+        # Mode 1: Browser / Phone Camera input (Native HTML5 camera on Streamlit Cloud & Mobile)
+        if "Browser / Phone" in cam_mode:
+            st.subheader("📸 Browser Live Device Camera")
+            st.caption("Capture a box/parcel using your laptop webcam or phone camera directly from this web page:")
+            photo = st.camera_input("Take a photo of the parcel/box")
+            if photo is not None:
+                img_bytes = photo.getvalue()
+                frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    cam_tracker = CameraBoxTracker(
+                        default_distance_cm=cam_dist,
+                        detection_interval=redetect_freq,
+                        tracker_type=cam_engine,
+                    )
+                    res = cam_tracker.process_frame(frame)
+                    annotated_rgb = cv2.cvtColor(res["annotated_frame"], cv2.COLOR_BGR2RGB)
+                    frame_placeholder.image(annotated_rgb, channels="RGB", use_container_width=True)
+
+                    d = res["dimensions_cm"]
+                    vw = res["volumetric_weight_kg"]
+                    status_color = "🟢" if res["state"] == TrackingState.TRACKING else "🟡" if res["state"] == TrackingState.INITIALIZING else "🔴"
+
+                    with metric_placeholder.container():
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric("Detection Status", f"{status_color} {res['state']}")
+                        m2.metric("FPS / Latency", f"{res['fps']:.1f} fps")
+                        m3.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
+                        m4.metric("Volumetric Weight", f"{vw:.3f} kg")
+
+        # Mode 2 & 3: Continuous Stream (Local OpenCV Webcam or Simulation)
+        elif run_tracker:
             cam_tracker = CameraBoxTracker(
                 default_distance_cm=cam_dist,
                 detection_interval=redetect_freq,
@@ -587,7 +629,11 @@ with tab_live:
                     cap = cv2.VideoCapture(0)
 
                 if not cap.isOpened():
-                    st.warning("⚠️ Could not open physical webcam (Device 0). Falling back to Simulated Stream.")
+                    st.info(
+                        "ℹ️ **Device 0 unavailable on Cloud Server:** Streamlit Cloud runs inside a remote headless Linux VM without a physical USB camera. "
+                        "To use your laptop/phone camera on the web, choose **'📸 Browser / Phone Camera'** above, or run locally: `streamlit run box_dimensioning/app/live_app.py`."
+                    )
+                    st.warning("Switching to Simulated Test Video Stream...")
                     is_sim = True
                     if cap:
                         cap.release()
@@ -630,13 +676,15 @@ with tab_live:
             if cap is not None and cap.isOpened():
                 cap.release()
         else:
-            # Show preview banner
-            preview_frame = generate_synthetic_box_frame(box_pos=(200, 140))
-            tracker_preview = CameraBoxTracker(default_distance_cm=cam_dist)
-            prev_res = tracker_preview.process_frame(preview_frame)
-            frame_placeholder.image(cv2.cvtColor(prev_res["annotated_frame"], cv2.COLOR_BGR2RGB),
-                                    caption="Ready — Toggle 'Start Camera Tracking' to begin.",
-                                    use_container_width=True)
+            if "Browser / Phone" not in cam_mode:
+                preview_frame = generate_synthetic_box_frame(box_pos=(200, 140))
+                tracker_preview = CameraBoxTracker(default_distance_cm=cam_dist)
+                prev_res = tracker_preview.process_frame(preview_frame)
+                frame_placeholder.image(
+                    cv2.cvtColor(prev_res["annotated_frame"], cv2.COLOR_BGR2RGB),
+                    caption="Ready — Toggle 'Start Camera Tracking' to begin.",
+                    use_container_width=True
+                )
 
 with tab_calib:
     st.subheader("OpenCV Chessboard Camera Calibration (F1, A1)")
