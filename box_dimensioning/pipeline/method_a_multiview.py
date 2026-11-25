@@ -302,9 +302,13 @@ class MethodAMultiView:
         sparse_points: Optional[np.ndarray] = None
     ) -> Tuple[Box, float]:
         """Fits an oriented 3D cuboid from triangulated 3D points and sparse point cloud.
+        Enforces rigid orthogonal box constraint: opposite faces are parallel and equal.
         Returns: (fitted_box, residual_error).
         """
         pts_3d = np.asarray(points_3d, dtype=np.float64)
+
+        # --- Path A: If we have exactly 8 or 9 corner points, use Box.fit ---
+        # Box.fit uses least-squares + SVD orthogonalization to enforce rigidity
         if len(pts_3d) == 8:
             try:
                 center = np.mean(pts_3d, axis=0)
@@ -320,16 +324,15 @@ class MethodAMultiView:
         if len(pts_3d) == 9:
             try:
                 rot, trans, scale = Box.fit(pts_3d)
-                # Ensure minimum valid scale
                 scale = np.maximum(scale, [0.03, 0.03, 0.01])
                 fitted = Box.from_transformation(rot, trans, scale)
-                # Compute reprojection / fitting residual
                 pts_fitted = fitted.vertices
                 res = float(np.mean(np.linalg.norm(pts_3d - pts_fitted, axis=1)))
                 return fitted, res
             except Exception:
                 pass
 
+        # --- Path B: Sparse point cloud → PCA + rigid orthogonal box ---
         if len(pts_3d) >= 4:
             pts = pts_3d
         elif sparse_points is not None and len(sparse_points) >= 4:
@@ -343,25 +346,35 @@ class MethodAMultiView:
 
         center_init = np.median(pts, axis=0)
 
-        # Establish orientation using ground plane normal if present
-        if ground_plane_normal is not None and np.linalg.norm(ground_plane_normal) > 1e-4:
-            up_axis = ground_plane_normal / np.linalg.norm(ground_plane_normal)
-        else:
-            up_axis = np.array([0.0, 1.0, 0.0])
-
+        # PCA for initial orientation
         pts_centered = pts - center_init
         u, s, vh = np.linalg.svd(pts_centered, full_matrices=False)
         rot_init = vh.T
         if np.linalg.det(rot_init) < 0:
             rot_init[:, -1] *= -1
 
+        # Align with ground plane if available
+        if ground_plane_normal is not None and np.linalg.norm(ground_plane_normal) > 1e-4:
+            up_axis = ground_plane_normal / np.linalg.norm(ground_plane_normal)
+            # Find which PCA axis is closest to gravity
+            dots = np.abs(rot_init.T @ up_axis)
+            gravity_axis = int(np.argmax(dots))
+            # Rotate the box so that axis aligns with gravity
+            if gravity_axis != 1:  # convention: Y-up
+                swap = np.eye(3)
+                swap[:, [1, gravity_axis]] = swap[:, [gravity_axis, 1]]
+                rot_init = rot_init @ swap
+                if np.linalg.det(rot_init) < 0:
+                    rot_init[:, -1] *= -1
+
         local_pts = (rot_init.T @ pts_centered.T).T
         mins = np.min(local_pts, axis=0)
         maxs = np.max(local_pts, axis=0)
         scale_init = np.maximum(maxs - mins, [0.03, 0.03, 0.01])
 
+        # Enforce rigid box via Box.from_transformation (guarantees orthogonal cuboid)
         fitted_box = Box.from_transformation(rot_init, center_init, scale_init)
-        
+
         # Compute true geometric residual: RMSE of point-to-box boundary distance
         half_extents = scale_init / 2.0
         d_x = np.maximum(0.0, np.abs(local_pts[:, 0]) - half_extents[0])

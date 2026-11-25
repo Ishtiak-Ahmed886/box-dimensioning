@@ -454,48 +454,36 @@ class CameraBoxTracker:
     ) -> Tuple[np.ndarray, Dict[str, float], float]:
         """
         Computes 3D cuboid corners, metric dimensions (L, W, H in cm), and volumetric weight (kg).
-        Uses camera intrinsics and known/estimated distance from camera to parcel.
+
+        Uses EPnP rigid cuboid solver (cv2.solvePnP + joint pose+scale optimization)
+        to recover a geometrically valid 3D bounding box where opposite faces are
+        guaranteed parallel and orthogonal by construction. Falls back to naive
+        back-projection only if EPnP fails entirely.
         """
+        from box_dimensioning.pipeline.epnp_solver import solve_epnp_cuboid
+
         h_img, w_img = image_shape[:2]
         K = self._ensure_camera_matrix(w_img, h_img)
+
+        # Initial scale guess based on default_distance_cm and apparent bbox size
+        pts = np.asarray(corners_2d, dtype=np.float64)
+        bbox_w_px = np.max(pts[:, 0]) - np.min(pts[:, 0])
+        bbox_h_px = np.max(pts[:, 1]) - np.min(pts[:, 1])
+        z_est = self.default_distance_cm / 100.0  # meters
         fx = K[0, 0]
-        fy = K[1, 1]
-        cx = K[0, 2]
-        cy = K[1, 2]
+        # Estimate physical size from pixel extent at estimated depth
+        est_w_m = max(0.05, bbox_w_px * z_est / fx)
+        est_h_m = max(0.05, bbox_h_px * z_est / fx)
+        est_d_m = max(0.03, min(est_w_m, est_h_m) * 0.4)  # depth heuristic
+        initial_scale = np.array([est_w_m, est_h_m, est_d_m])
 
-        z_m = self.default_distance_cm / 100.0  # distance in meters
+        result = solve_epnp_cuboid(
+            corners_2d, K, self.dist_coeffs, initial_scale=initial_scale
+        )
 
-        # Back-project 2D corners to 3D camera coordinates:
-        # X = (u - cx) * Z / fx, Y = (v - cy) * Z / fy
-        corners_3d = np.zeros((8, 3), dtype=np.float64)
-        for i in range(8):
-            u, v = corners_2d[i]
-            # Vary depth slightly for back vs front vertices to form true 3D cuboid
-            z_vertex = z_m + (0.05 if i in (0, 1, 4, 5) else -0.05)
-            corners_3d[i, 0] = (u - cx) * z_vertex / fx
-            corners_3d[i, 1] = (v - cy) * z_vertex / fy
-            corners_3d[i, 2] = z_vertex
-
-        # Metric dimensions from 3D Euclidean distances
-        # Length along top face: C1 to C2
-        length_m = float(np.linalg.norm(corners_3d[1] - corners_3d[0]))
-        # Width along top face: C1 to C4
-        width_m = float(np.linalg.norm(corners_3d[3] - corners_3d[0]))
-        # Height along vertical pillar: C1 to C5
-        height_m = float(np.linalg.norm(corners_3d[4] - corners_3d[0]))
-
-        length_cm = max(1.0, round(length_m * 100.0, 1))
-        width_cm = max(1.0, round(width_m * 100.0, 1))
-        height_cm = max(1.0, round(height_m * 100.0, 1))
-
-        # Order L >= W >= H conventionally
-        dims_sorted = sorted([length_cm, width_cm, height_cm], reverse=True)
-        dims = {
-            "length": dims_sorted[0],
-            "width": dims_sorted[1],
-            "height": dims_sorted[2]
-        }
-        vol_wt = compute_volumetric_weight(dims["length"], dims["width"], dims["height"])
+        corners_3d = result['corners_3d']
+        dims = result['dimensions_cm']
+        vol_wt = result['volumetric_weight_kg']
 
         return corners_3d, dims, vol_wt
 
@@ -648,22 +636,34 @@ class CameraBoxTracker:
             if corners_2d is not None and len(corners_2d) == 8:
                 pts = np.asarray(corners_2d, dtype=np.int32)
 
-                # Cuboid 12 edges
+                # Google Objectron-style visual HUD:
+                # 12 blue cuboid edges + pink diagonal cross on front/top + black cross on base
+                BLUE = (240, 130, 30)       # electric blue BGR
+                PINK = (180, 105, 255)      # pink BGR
+                BLACK = (30, 30, 30)        # near-black BGR
+
+                # Cuboid 12 edges (blue)
                 wire_edges = [
                     (0, 4), (1, 5), (2, 6), (3, 7),  # vertical edges
                     (0, 1), (1, 2), (2, 3), (3, 0),  # top face
                     (4, 5), (5, 6), (6, 7), (7, 4),  # bottom face
                 ]
                 for p_start, p_end in wire_edges:
-                    cv2.line(img, tuple(pts[p_start]), tuple(pts[p_end]), color_track, 2, cv2.LINE_AA)
+                    cv2.line(img, tuple(pts[p_start]), tuple(pts[p_end]), BLUE, 2, cv2.LINE_AA)
+
+                # Pink diagonal cross (×) on front/top face (corners 0,1,2,3)
+                cv2.line(img, tuple(pts[0]), tuple(pts[2]), PINK, 2, cv2.LINE_AA)
+                cv2.line(img, tuple(pts[1]), tuple(pts[3]), PINK, 2, cv2.LINE_AA)
+
+                # Black diagonal cross (×) on bottom/base face (corners 4,5,6,7)
+                cv2.line(img, tuple(pts[4]), tuple(pts[6]), BLACK, 2, cv2.LINE_AA)
+                cv2.line(img, tuple(pts[5]), tuple(pts[7]), BLACK, 2, cv2.LINE_AA)
 
                 # Draw Corner Markers 1 to 8
                 for idx in range(8):
                     pt = tuple(pts[idx])
-                    # Outer black border, inner bright cyan circle
                     cv2.circle(img, pt, 7, (0, 0, 0), -1)
                     cv2.circle(img, pt, 5, (0, 255, 255), -1)
-                    # Label 1 to 8
                     label = f"C{idx + 1}"
                     cv2.putText(img, label, (pt[0] + 6, pt[1] - 4),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
