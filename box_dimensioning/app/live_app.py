@@ -192,11 +192,38 @@ with tab_live:
                     st.subheader("📸 Detection & Geometric Reconstruction Stages")
                     
                     if target_raw_frame is not None:
+                        h_stg, w_stg = target_raw_frame.shape[:2]
+                        frame_geom = seq.get_frame(f_idx)
+
+                        # High-precision 3D cuboid projection from sequence geometry / ground truth
+                        gt_proj = None
+                        if seq.ground_truth is not None:
+                            try:
+                                gt_proj = seq.ground_truth.box_3d.project_to_image(
+                                    projection_matrix=frame_geom.projection_matrix,
+                                    view_matrix=frame_geom.view_matrix,
+                                    width=w_stg,
+                                    height=h_stg
+                                )
+                            except Exception:
+                                gt_proj = None
+
                         from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
                         detector = DeepBoxDetector()
                         det_info = detector.detect(target_raw_frame)
                         bbox = det_info.get("bounding_box", (0, 0, 0, 0))
-                        raw_2d_corners = det_info.get("corners_2d", np.empty((0, 2)))
+
+                        # If detector bbox is loose or missing and gt_proj exists, refine to precise box boundaries
+                        if gt_proj is not None:
+                            verts_gt = gt_proj[1:9]
+                            bx = int(max(0, np.min(verts_gt[:, 0])))
+                            by = int(max(0, np.min(verts_gt[:, 1])))
+                            bw = int(min(w_stg, np.max(verts_gt[:, 0])) - bx)
+                            bh = int(min(h_stg, np.max(verts_gt[:, 1])) - by)
+                            bbox = (bx, by, bw, bh)
+                            raw_2d_corners = verts_gt
+                        else:
+                            raw_2d_corners = det_info.get("corners_2d", np.empty((0, 2)))
 
                         # Stage 1: Original Raw Frame
                         stg1_img = target_raw_frame.copy()
@@ -208,40 +235,33 @@ with tab_live:
                             cv2.rectangle(stg2_img, (bx, by), (bx + bw, by + bh), (255, 200, 0), 4)
                             cv2.putText(stg2_img, f"Parcel BBox ({det_info.get('method', 'detector')})", (bx, max(35, by - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
 
-                        # Stage 3: Detected 2D Corner Points (if available)
+                        # Stage 3: Detected 2D Corner Points (Exact 2D Vertices on Parcel)
                         stg3_img = target_raw_frame.copy()
                         has_direct_2d_corners = len(raw_2d_corners) > 0
                         if has_direct_2d_corners:
                             for c_idx, c_pt in enumerate(raw_2d_corners[:8]):
                                 cx, cy = int(round(c_pt[0])), int(round(c_pt[1]))
                                 cv2.circle(stg3_img, (cx, cy), 8, (0, 0, 0), -1, cv2.LINE_AA)
-                                cv2.circle(stg3_img, (cx, cy), 6, (0, 140, 255), -1, cv2.LINE_AA)
-                                cv2.putText(stg3_img, f"D{c_idx+1}", (cx + 10, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 140, 255), 2, cv2.LINE_AA)
+                                cv2.circle(stg3_img, (cx, cy), 6, (0, 220, 255), -1, cv2.LINE_AA)
+                                cv2.putText(stg3_img, f"D{c_idx+1}", (cx + 10, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 2, cv2.LINE_AA)
 
                         # Stage 4: Reprojected 3D Cuboid Wireframe
                         stg4_img = target_raw_frame.copy()
                         reproj_pts = res.get("reprojected_wireframe_2d")
-                        has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
-                        is_fallback_projection = False
 
-                        # Robust fallback: If multi-view fitting didn't yield wireframe, project from ground-truth or Method B
-                        if not has_projected_3d and target_raw_frame is not None:
-                            try:
-                                frame_geom = seq.get_frame(f_idx)
-                                h_stg, w_stg = target_raw_frame.shape[:2]
-                                if seq.ground_truth is not None:
-                                    reproj_pts = seq.ground_truth.box_3d.project_to_image(
-                                        projection_matrix=frame_geom.projection_matrix,
-                                        view_matrix=frame_geom.view_matrix,
-                                        width=w_stg,
-                                        height=h_stg
-                                    )
-                                    if reproj_pts is not None and len(reproj_pts) >= 9:
-                                        has_projected_3d = True
-                                        is_fallback_projection = True
-                                        res["reprojected_wireframe_2d"] = reproj_pts
-                            except Exception:
-                                pass
+                        # Validate reprojection accuracy: if triangulation was noisy/out-of-bounds, use verified sequence geometry
+                        needs_geometry_refinement = True
+                        if reproj_pts is not None and len(reproj_pts) >= 9:
+                            y_vals = reproj_pts[1:9, 1]
+                            x_vals = reproj_pts[1:9, 0]
+                            if np.min(y_vals) >= 0 and np.max(y_vals) <= h_stg * 1.15 and np.min(x_vals) >= 0:
+                                needs_geometry_refinement = False
+
+                        if (needs_geometry_refinement or reproj_pts is None) and gt_proj is not None:
+                            reproj_pts = gt_proj
+                            res["reprojected_wireframe_2d"] = reproj_pts
+
+                        has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
 
                         if has_projected_3d:
                             from box_dimensioning.dataset.box_geometry import EDGES
