@@ -334,7 +334,10 @@ class CameraBoxTracker:
             conf = deep_res.get("confidence", 0.8)
             # Only accept if box meets minimum dimensions and is from custom YOLO or good confidence
             if bw >= 20 and bh >= 20 and conf >= 0.30:
-                corners_8 = self._infer_8_corners_from_bbox((bx, by, bw, bh), image)
+                if "corners_8_2d" in deep_res and deep_res["corners_8_2d"] is not None and len(deep_res["corners_8_2d"]) == 8:
+                    corners_8 = deep_res["corners_8_2d"]
+                else:
+                    corners_8 = self._infer_8_corners_from_bbox((bx, by, bw, bh), image)
                 return {
                     "bbox": (bx, by, bw, bh),
                     "corners_8_2d": corners_8,

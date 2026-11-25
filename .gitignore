@@ -16,5 +16,8 @@ site_summary.txt
 .ultralytics/
 runs/
 data/dataset_box/
+data/dataset_box_pose/
 yolov8n.pt
+yolov8n-pose.pt
+scratch/
 camera_live_evidence/

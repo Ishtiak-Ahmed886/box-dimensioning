@@ -116,6 +116,65 @@ class DeepBoxDetector:
         self._onnx_tried = False
         self._custom_yolo = None
         self._custom_yolo_tried = False
+        self._custom_pose = None
+        self._custom_pose_tried = False
+
+    def _load_custom_pose(self) -> bool:
+        """Loads custom fine-tuned YOLO 8-corner keypoint model if available."""
+        if self._custom_pose is not None:
+            return True
+        if self._custom_pose_tried:
+            return False
+        self._custom_pose_tried = True
+        custom_weights = os.path.join("models", "custom_box_corner_pose.pt")
+        if os.path.isfile(custom_weights):
+            try:
+                cfg_dir = os.path.abspath(".ultralytics")
+                os.makedirs(cfg_dir, exist_ok=True)
+                os.environ["YOLO_CONFIG_DIR"] = cfg_dir
+
+                from ultralytics import YOLO
+                self._custom_pose = YOLO(custom_weights)
+                print(f"[DeepBoxDetector] Loaded custom 8-corner pose YOLO detector from {custom_weights}")
+                return True
+            except Exception as e:
+                print(f"[DeepBoxDetector] Failed to load custom pose weights: {e}")
+        return False
+
+    def _detect_custom_pose(self, image: np.ndarray) -> Optional[Dict]:
+        """Runs custom YOLO 8-corner keypoint model on image."""
+        try:
+            results = self._custom_pose(image, conf=self.conf_threshold, verbose=False)
+            if results and len(results) > 0 and len(results[0].boxes) > 0:
+                confs = results[0].boxes.conf.cpu().numpy()
+                best_idx = int(np.argmax(confs))
+                best_conf = float(confs[best_idx])
+                coords = [int(v) for v in results[0].boxes.xyxy[best_idx].cpu().numpy().tolist()]
+                x1, y1, x2, y2 = coords
+                bbox = (x1, y1, x2 - x1, y2 - y1)
+
+                corners_8 = None
+                if results[0].keypoints is not None and len(results[0].keypoints.xy) > best_idx:
+                    kpts = results[0].keypoints.xy[best_idx].cpu().numpy()
+                    if len(kpts) == 8:
+                        corners_8 = kpts.astype(np.float32)
+
+                if corners_8 is None:
+                    corners_8 = self._bbox_to_corners(x1, y1, x2, y2)
+
+                return {
+                    "corners_2d": corners_8,
+                    "corners_8_2d": corners_8,
+                    "bounding_rect": bbox,
+                    "bounding_box": bbox,
+                    "confidence": best_conf,
+                    "class_id": 0,
+                    "method": "custom_trained_yolo_corner_pose",
+                    "mask": self._make_mask(image.shape[:2], x1, y1, x2, y2),
+                }
+        except Exception as e:
+            print(f"[DeepBoxDetector] Custom YOLO pose prediction error: {e}")
+        return None
 
     def _load_custom_yolo(self) -> bool:
         """Loads custom fine-tuned YOLO box detector if available."""
@@ -208,7 +267,13 @@ class DeepBoxDetector:
         h, w = image.shape[:2]
 
         if self.use_deep:
-            # Priority 1: Custom fine-tuned YOLO box detector
+            # Priority 1: Custom fine-tuned YOLO 8-corner keypoint model
+            if self._load_custom_pose():
+                res_pose = self._detect_custom_pose(image)
+                if res_pose is not None:
+                    return res_pose
+
+            # Priority 2: Custom fine-tuned YOLO box detector
             if self._load_custom_yolo():
                 res = self._detect_custom_yolo(image)
                 if res is not None:

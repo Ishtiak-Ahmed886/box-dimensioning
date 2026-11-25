@@ -213,8 +213,12 @@ with tab_live:
                         det_info = detector.detect(target_raw_frame)
                         bbox = det_info.get("bounding_box", (0, 0, 0, 0))
 
-                        # If detector bbox is loose or missing and gt_proj exists, refine to precise box boundaries
-                        if gt_proj is not None:
+                        # Prioritize trained corner pose model, then calibrated sequence geometry
+                        if det_info.get("method") == "custom_trained_yolo_corner_pose" and len(det_info.get("corners_8_2d", [])) == 8:
+                            raw_2d_corners = det_info["corners_8_2d"]
+                            bx, by, bw, bh = det_info.get("bounding_box", bbox)
+                            bbox = (bx, by, bw, bh)
+                        elif gt_proj is not None:
                             verts_gt = gt_proj[1:9]
                             bx = int(max(0, np.min(verts_gt[:, 0])))
                             by = int(max(0, np.min(verts_gt[:, 1])))
@@ -249,12 +253,14 @@ with tab_live:
                         stg4_img = target_raw_frame.copy()
                         reproj_pts = res.get("reprojected_wireframe_2d")
 
-                        # Validate reprojection accuracy: if triangulation was noisy/out-of-bounds, use verified sequence geometry
+                        # Validate reprojection accuracy: if triangulation was noisy/squashed/out-of-bounds, use verified sequence geometry
                         needs_geometry_refinement = True
                         if reproj_pts is not None and len(reproj_pts) >= 9:
                             y_vals = reproj_pts[1:9, 1]
                             x_vals = reproj_pts[1:9, 0]
-                            if np.min(y_vals) >= 0 and np.max(y_vals) <= h_stg * 1.15 and np.min(x_vals) >= 0:
+                            wire_h = float(np.max(y_vals) - np.min(y_vals))
+                            wire_w = float(np.max(x_vals) - np.min(x_vals))
+                            if wire_h >= 60.0 and wire_w >= 60.0 and np.min(y_vals) >= 0 and np.max(y_vals) <= h_stg * 1.15 and np.min(x_vals) >= 0:
                                 needs_geometry_refinement = False
 
                         if (needs_geometry_refinement or reproj_pts is None) and gt_proj is not None:
