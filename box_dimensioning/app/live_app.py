@@ -6,18 +6,28 @@ Enables the instructor and users to:
 
 import os
 import sys
-import glob
-import json
-import time
-import urllib.request
-import cv2
-import numpy as np
-import streamlit as st
 
 # Ensure repository root is on sys.path for Streamlit Cloud deployment
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+import glob
+import json
+import time
+import urllib.request
+import streamlit as st
+import numpy as np
+
+try:
+    import cv2
+except ImportError as cv_err:
+    st.error(f"### ❌ OpenCV Import Error on Cloud Environment\n\n"
+             f"Details: `{cv_err}`\n\n"
+             "**Resolution:** Streamlit Cloud requires compatible C-libraries or Python 3.11.\n"
+             "1. Ensure **Python 3.11** is selected in your Streamlit Cloud Dashboard (**Manage app ⚙️ -> Settings -> General -> Python version -> 3.11**).\n"
+             "2. Required apt packages are specified in `packages.txt` (`libgl1-mesa-glx`, `libgl1`, `ffmpeg`).")
+    st.stop()
 
 from box_dimensioning.calibration.camera_calibrator import CameraCalibrator
 from box_dimensioning.dataset.objectron_parser import load_sequence

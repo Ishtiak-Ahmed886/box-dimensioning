@@ -109,7 +109,7 @@ class DeepBoxDetector:
     YOLO_MODEL_URL = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.onnx"
     YOLO_MODEL_CACHE = None  # Will be set to user cache path
 
-    def __init__(self, use_deep: bool = True, conf_threshold: float = 0.25):
+    def __init__(self, use_deep: bool = True, conf_threshold: float = 0.20):
         self.use_deep = use_deep
         self.conf_threshold = conf_threshold
         self._onnx_session = None
@@ -118,6 +118,8 @@ class DeepBoxDetector:
         self._custom_yolo_tried = False
         self._custom_pose = None
         self._custom_pose_tried = False
+        self._ultralytics_yolo = None
+        self._ultralytics_yolo_tried = False
 
     def _load_custom_pose(self) -> bool:
         """Loads custom fine-tuned YOLO 8-corner keypoint model if available."""
@@ -231,6 +233,74 @@ class DeepBoxDetector:
             print(f"[DeepBoxDetector] Custom YOLO prediction error: {e}")
         return None
 
+    def _load_ultralytics_yolo(self) -> bool:
+        """Loads pretrained YOLOv8n detector from Ultralytics (CPU)."""
+        if self._ultralytics_yolo is not None:
+            return True
+        if self._ultralytics_yolo_tried:
+            return False
+        self._ultralytics_yolo_tried = True
+        try:
+            cfg_dir = os.path.abspath(".ultralytics")
+            os.makedirs(cfg_dir, exist_ok=True)
+            os.environ["YOLO_CONFIG_DIR"] = cfg_dir
+
+            from ultralytics import YOLO
+            model_path = "yolov8n.pt"
+            if not os.path.isfile(model_path):
+                alt_path = os.path.join("models", "yolov8n.pt")
+                if os.path.isfile(alt_path):
+                    model_path = alt_path
+            self._ultralytics_yolo = YOLO(model_path)
+            return True
+        except Exception as e:
+            print(f"[DeepBoxDetector] Failed to load Ultralytics YOLO: {e}")
+            return False
+
+    def _detect_ultralytics_yolo(self, image: np.ndarray) -> Optional[Dict]:
+        """Runs pretrained YOLOv8 to detect parcels, boxes, books, or luggage, rejecting people."""
+        try:
+            results = self._ultralytics_yolo(image, conf=max(0.18, self.conf_threshold), verbose=False)
+            if not results or len(results) == 0 or len(results[0].boxes) == 0:
+                return None
+
+            boxes = results[0].boxes
+            best_box = None
+            best_score = -1.0
+            # Target classes: 73: book, 28: suitcase, 24: backpack, 39: bottle, 60: dining table, 56: chair
+            PRIORITY_CLASSES = {73: 2.0, 28: 2.0, 24: 1.5, 39: 1.2, 60: 1.0, 56: 0.8}
+
+            for b in boxes:
+                cls_id = int(b.cls[0])
+                if cls_id == 0:  # STRICTLY REJECT 'person' to avoid author portraits / figures on covers
+                    continue
+                conf = float(b.conf[0])
+                weight = PRIORITY_CLASSES.get(cls_id, 1.0)
+                score = conf * weight
+                if score > best_score:
+                    best_score = score
+                    best_box = b
+
+            if best_box is not None:
+                coords = [int(v) for v in best_box.xyxy[0].tolist()]
+                x1, y1, x2, y2 = coords
+                bbox = (x1, y1, x2 - x1, y2 - y1)
+                corners = self._bbox_to_corners(x1, y1, x2, y2)
+                cls_id = int(best_box.cls[0])
+                cls_name = results[0].names.get(cls_id, "object")
+                return {
+                    "corners_2d": corners,
+                    "bounding_rect": bbox,
+                    "bounding_box": bbox,
+                    "confidence": float(best_box.conf[0]),
+                    "class_id": cls_id,
+                    "method": f"ultralytics_{cls_name}",
+                    "mask": self._make_mask(image.shape[:2], x1, y1, x2, y2),
+                }
+        except Exception as e:
+            print(f"[DeepBoxDetector] Ultralytics YOLO detection error: {e}")
+        return None
+
     def _load_onnx(self) -> bool:
         """Lazily loads YOLOv8-nano ONNX model, returns True if successful."""
         if self._onnx_session is not None:
@@ -283,7 +353,13 @@ class DeepBoxDetector:
                 if res is not None:
                     return res
 
-            # Priority 2: General YOLOv8-nano ONNX
+            # Priority 3: Pretrained Ultralytics YOLOv8n (detects books, luggage, boxes; ignores persons)
+            if self._load_ultralytics_yolo():
+                res_u = self._detect_ultralytics_yolo(image)
+                if res_u is not None:
+                    return res_u
+
+            # Priority 4: General YOLOv8-nano ONNX
             if self._load_onnx():
                 result = self._detect_yolo(image)
                 if result is not None:
@@ -346,11 +422,47 @@ class DeepBoxDetector:
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
             edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-            # Step 3: Hough line detection
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=60,
-                                     minLineLength=int(min(w, h) * 0.08), maxLineGap=20)
+            # Step 3: Find dominant central parcel/box contour
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            img_area = float(w * h)
+            valid_cnts = []
+            img_center = np.array([w * 0.5, h * 0.5])
 
-            found_corners = False
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if 0.02 * img_area <= area <= 0.85 * img_area:
+                    rect = cv2.boundingRect(cnt)
+                    bx, by, bw, bh = rect
+                    cnt_center = np.array([bx + bw * 0.5, by + bh * 0.5])
+                    dist_to_center = float(np.linalg.norm(cnt_center - img_center))
+                    valid_cnts.append((area, dist_to_center, cnt, rect))
+
+            # Prioritize large contours near the center
+            if valid_cnts:
+                # Score = area / (dist_to_center + 100)
+                valid_cnts.sort(key=lambda item: item[0] / (item[1] + 100.0), reverse=True)
+                best_area, _, best_cnt, best_rect = valid_cnts[0]
+                bx, by, bw, bh = best_rect
+                bbox = (bx, by, bw, bh)
+
+                # Focus edge mask exclusively within this parcel ROI
+                parcel_mask = np.zeros_like(edges)
+                cv2.drawContours(parcel_mask, [best_cnt], -1, 255, thickness=-1)
+                edges = cv2.bitwise_and(edges, edges, mask=parcel_mask)
+
+                peri = cv2.arcLength(best_cnt, True)
+                approx = cv2.approxPolyDP(best_cnt, 0.03 * peri, True)
+                if len(approx) in (4, 8):
+                    corners = approx.reshape(-1, 2).astype(np.float32)
+                else:
+                    corners = self._bbox_to_corners(bx, by, bx + bw, by + bh)
+            else:
+                bx, by, bw, bh = bbox
+
+            # Step 4: Hough line detection inside parcel region
+            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50,
+                                     minLineLength=int(min(bw, bh) * 0.15), maxLineGap=15)
+
             if lines is not None:
                 try:
                     segs = np.asarray(lines, dtype=np.float32).reshape(-1, 4)
@@ -358,11 +470,12 @@ class DeepBoxDetector:
                         intersections = []
                         n_segs = len(segs)
                         for i in range(n_segs):
-                            for j in range(i + 1, min(n_segs, i + 15)):
+                            for j in range(i + 1, min(n_segs, i + 12)):
                                 pt = self._line_intersection(segs[i], segs[j])
                                 if pt is not None:
                                     x_pt, y_pt = pt
-                                    if 0 <= x_pt <= w and 0 <= y_pt <= h:
+                                    # Ensure intersections stay strictly within the detected parcel ROI
+                                    if bx - 5 <= x_pt <= bx + bw + 5 and by - 5 <= y_pt <= by + bh + 5:
                                         intersections.append([x_pt, y_pt])
 
                         if len(intersections) >= 4:
@@ -373,25 +486,8 @@ class DeepBoxDetector:
                                 pts, n_clusters, None, criteria, 5, cv2.KMEANS_PP_CENTERS
                             )
                             corners = centers.astype(np.float32)
-                            xs = centers[:, 0]; ys = centers[:, 1]
-                            bbox = (int(xs.min()), int(ys.min()),
-                                    int(max(10, xs.max() - xs.min())), int(max(10, ys.max() - ys.min())))
-                            found_corners = True
                 except Exception:
                     pass
-
-            # Step 4: Contour fallback if Hough corners were insufficient
-            if not found_corners:
-                contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if contours:
-                    cnt = max(contours, key=cv2.contourArea)
-                    peri = cv2.arcLength(cnt, True)
-                    approx = cv2.approxPolyDP(cnt, 0.025 * peri, True)
-                    if len(approx) >= 4:
-                        corners = approx.reshape(-1, 2).astype(np.float32)
-                    rect = cv2.boundingRect(cnt)
-                    x, y, bw, bh = rect
-                    bbox = (int(x), int(y), int(bw), int(bh))
 
         except Exception as e:
             print(f"[DeepBoxDetector] Classical fallback caught error: {e}")

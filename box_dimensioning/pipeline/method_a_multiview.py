@@ -214,8 +214,8 @@ class MethodAMultiView:
                         for idx in idx_inliers:
                             p1 = src_pts[idx]
                             p2 = dst_pts[idx]
-                            # Only accept feature points located on or within the box region
-                            if hull1 is not None and cv2.pointPolygonTest(hull1, (float(p1[0]), float(p1[1])), True) < -25.0:
+                            # Only accept feature points located strictly on or within the box region
+                            if hull1 is not None and cv2.pointPolygonTest(hull1, (float(p1[0]), float(p1[1])), True) < 0.0:
                                 continue
                             matched1.append(p1)
                             matched2.append(p2)

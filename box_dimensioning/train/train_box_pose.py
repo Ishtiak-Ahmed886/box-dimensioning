@@ -41,16 +41,23 @@ def train_box_pose(
         verbose=True
     )
 
-    best_pt = os.path.join("runs", "pose", "box_corner_train", "weights", "best.pt")
+    candidate_weights = [
+        os.path.join("runs", "pose", "runs", "pose", "box_corner_train", "weights", "best.pt"),
+        os.path.join("runs", "pose", "box_corner_train", "weights", "best.pt"),
+        os.path.join("runs", "pose", "runs", "pose", "box_corner_train", "weights", "last.pt"),
+        os.path.join("runs", "pose", "box_corner_train", "weights", "last.pt"),
+    ]
     target_pt = os.path.join(output_dir, "custom_box_corner_pose.pt")
 
-    if not os.path.exists(best_pt):
-        best_pt = os.path.join("runs", "pose", "box_corner_train", "weights", "last.pt")
+    saved = False
+    for pt in candidate_weights:
+        if os.path.exists(pt):
+            shutil.copyfile(pt, target_pt)
+            print(f"Trained corner model copied from {pt} to {target_pt}")
+            saved = True
+            break
 
-    if os.path.exists(best_pt):
-        shutil.copyfile(best_pt, target_pt)
-        print(f"Trained corner model saved to {target_pt}")
-    else:
+    if not saved:
         print("Saving active model instance...")
         model.save(target_pt)
 

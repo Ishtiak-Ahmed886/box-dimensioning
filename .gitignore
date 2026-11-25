@@ -21,3 +21,6 @@ yolov8n.pt
 yolov8n-pose.pt
 scratch/
 camera_live_evidence/
+*.mp4
+*.MOV
+*.mov
