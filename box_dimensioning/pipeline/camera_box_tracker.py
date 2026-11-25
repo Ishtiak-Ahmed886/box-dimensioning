@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 from box_dimensioning.pipeline.quality_gate import QualityGate, QualityReport
+from box_dimensioning.pipeline.kalman_filter import CuboidKalmanFilter
 from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
 from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
 from box_dimensioning.dataset.box_geometry import compute_volumetric_weight, EDGES
@@ -168,6 +169,7 @@ class CameraBoxTracker:
         # Smoothing buffers
         self._smoothed_corners_2d: Optional[np.ndarray] = None
         self._smoothed_dims: Optional[Dict[str, float]] = None
+        self._kalman = CuboidKalmanFilter() if enable_smoothing else None
 
     def _init_tracker(self, image: np.ndarray, bbox: Tuple[int, int, int, int]) -> bool:
         """Instantiates and initializes tracking algorithm for given bounding box."""
@@ -563,34 +565,23 @@ class CameraBoxTracker:
             w, h
         )
 
-        # Cuboid reconstruction and smoothing
+        # Cuboid reconstruction and Kalman-filtered smoothing
         if self.state == TrackingState.TRACKING and self.current_corners_2d is not None:
-            # Apply temporal exponential smoothing to stabilize jitter
-            if self.enable_smoothing:
-                if self._smoothed_corners_2d is None:
-                    self._smoothed_corners_2d = self.current_corners_2d.copy()
-                else:
-                    self._smoothed_corners_2d = (
-                        (1.0 - self.smoothing_alpha) * self._smoothed_corners_2d +
-                        self.smoothing_alpha * self.current_corners_2d
-                    )
-                active_corners_2d = self._smoothed_corners_2d
-            else:
-                active_corners_2d = self.current_corners_2d
+            # Run EPnP on raw 2D corners first
+            raw_corners_2d = self.current_corners_2d
+            corners_3d, raw_dims, raw_vw = self.estimate_3d_and_dimensions(raw_corners_2d, (h, w))
 
-            corners_3d, raw_dims, raw_vw = self.estimate_3d_and_dimensions(active_corners_2d, (h, w))
-            if self.enable_smoothing and self._smoothed_dims is not None:
-                smooth_l = (1.0 - self.smoothing_alpha) * self._smoothed_dims["length"] + self.smoothing_alpha * raw_dims["length"]
-                smooth_w = (1.0 - self.smoothing_alpha) * self._smoothed_dims["width"] + self.smoothing_alpha * raw_dims["width"]
-                smooth_h = (1.0 - self.smoothing_alpha) * self._smoothed_dims["height"] + self.smoothing_alpha * raw_dims["height"]
-                self.current_dimensions = {
-                    "length": round(smooth_l, 1),
-                    "width": round(smooth_w, 1),
-                    "height": round(smooth_h, 1)
-                }
+            # Apply Kalman filter for temporal smoothing
+            if self._kalman is not None:
+                self._kalman.predict()
+                smooth_corners, smooth_dims, accepted = self._kalman.update(
+                    raw_corners_2d, raw_dims
+                )
+                active_corners_2d = smooth_corners
+                self.current_dimensions = smooth_dims
             else:
+                active_corners_2d = raw_corners_2d
                 self.current_dimensions = raw_dims
-                self._smoothed_dims = raw_dims.copy()
 
             self.current_corners_3d = corners_3d
             self.current_volumetric_weight = compute_volumetric_weight(
@@ -713,5 +704,7 @@ class CameraBoxTracker:
         self.current_corners_3d = None
         self._smoothed_corners_2d = None
         self._smoothed_dims = None
+        if self._kalman is not None:
+            self._kalman.reset()
         self.current_dimensions = {"length": 0.0, "width": 0.0, "height": 0.0}
         self.current_volumetric_weight = 0.0
