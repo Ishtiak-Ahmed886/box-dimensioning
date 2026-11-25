@@ -262,6 +262,10 @@ class DeepBoxDetector:
             print(f"[DeepBoxDetector] ONNX load failed: {e}. Using classical fallback.")
             return False
 
+    def detect_corners(self, image: np.ndarray, candidate_bounding_rect: Optional[Tuple[int, int, int, int]] = None) -> Dict:
+        """Alias for detect() providing polymorphic compatibility with classical and learned segmenters."""
+        return self.detect(image)
+
     def detect(self, image: np.ndarray) -> Dict:
         """Main detection entry point. Returns corners_2d, bbox, confidence, method."""
         h, w = image.shape[:2]

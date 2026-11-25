@@ -10,7 +10,7 @@ Meets acceptance criteria:
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Any
 import time
 import cv2
 import numpy as np
@@ -18,6 +18,7 @@ from scipy.optimize import minimize
 
 from box_dimensioning.dataset.box_geometry import Box, compute_volumetric_weight
 from box_dimensioning.dataset.objectron_parser import FrameGeometry, ObjectronSequence
+from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
 from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
 from box_dimensioning.pipeline.quality_gate import QualityGate, QualityReport, QualityReason
 
@@ -46,11 +47,13 @@ class MethodAMultiView:
         min_baseline_meters: float = 0.05,  # 5 cm minimum baseline between keyframes
         target_baseline_meters: float = 0.15, # 15 cm target baseline for stable triangulation
         quality_gate: Optional[QualityGate] = None,
+        detector: Optional[Any] = None,
     ):
         self.min_baseline_meters = min_baseline_meters
         self.target_baseline_meters = target_baseline_meters
         self.quality_gate = quality_gate or QualityGate(min_baseline_meters=min_baseline_meters)
-        self.segmenter = ClassicalBoxSegmenter()
+        self.detector = detector or DeepBoxDetector()
+        self.segmenter = self.detector  # polymorphic alias for detector
 
     def select_keyframe_pair(
         self,
@@ -170,11 +173,18 @@ class MethodAMultiView:
         corners1: np.ndarray,
         corners2: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Matches corners and SIFT/ORB features between two views with epipolar constraint."""
+        """Matches corners and local features between two views with epipolar constraint.
+        Prioritizes semantic 8-keypoint or 9-keypoint 1-to-1 correspondences.
+        Falls back to epipolar guided feature matching only when keypoints are absent.
+        """
+        # If both frames have ordered 8 or 9 corner keypoints, they have direct semantic correspondence!
+        if len(corners1) == len(corners2) and len(corners1) in (8, 9):
+            return np.asarray(corners1, dtype=np.float64), np.asarray(corners2, dtype=np.float64)
+
         matched1: List[np.ndarray] = []
         matched2: List[np.ndarray] = []
 
-        # If both images are provided, use SIFT feature matching
+        # If both images are provided, use SIFT feature matching constrained to box interior
         if img1 is not None and img2 is not None:
             sift = cv2.SIFT_create(nfeatures=600)
             kp1, des1 = sift.detectAndCompute(img1, None)
@@ -294,25 +304,38 @@ class MethodAMultiView:
         """Fits an oriented 3D cuboid from triangulated 3D points and sparse point cloud.
         Returns: (fitted_box, residual_error).
         """
-        if len(points_3d) == 9:
+        pts_3d = np.asarray(points_3d, dtype=np.float64)
+        if len(pts_3d) == 8:
             try:
-                rot, trans, scale = Box.fit(points_3d)
+                center = np.mean(pts_3d, axis=0)
+                pts_9 = np.vstack([center, pts_3d])
+                rot, trans, scale = Box.fit(pts_9)
+                scale = np.maximum(scale, [0.03, 0.03, 0.01])
+                fitted = Box.from_transformation(rot, trans, scale)
+                res = float(np.mean(np.linalg.norm(pts_9 - fitted.vertices, axis=1)))
+                return fitted, res
+            except Exception:
+                pass
+
+        if len(pts_3d) == 9:
+            try:
+                rot, trans, scale = Box.fit(pts_3d)
                 # Ensure minimum valid scale
                 scale = np.maximum(scale, [0.03, 0.03, 0.01])
                 fitted = Box.from_transformation(rot, trans, scale)
                 # Compute reprojection / fitting residual
                 pts_fitted = fitted.vertices
-                res = float(np.mean(np.linalg.norm(points_3d - pts_fitted, axis=1)))
+                res = float(np.mean(np.linalg.norm(pts_3d - pts_fitted, axis=1)))
                 return fitted, res
             except Exception:
                 pass
 
-        if len(points_3d) >= 4:
-            pts = points_3d
+        if len(pts_3d) >= 4:
+            pts = pts_3d
         elif sparse_points is not None and len(sparse_points) >= 4:
             pts = sparse_points
-        elif len(points_3d) > 0:
-            pts = points_3d
+        elif len(pts_3d) > 0:
+            pts = pts_3d
         else:
             default_scale = np.array([0.05, 0.05, 0.05])
             box = Box.from_transformation(np.eye(3), np.array([0.0, 0.0, 0.5]), default_scale)
@@ -333,8 +356,8 @@ class MethodAMultiView:
             rot_init[:, -1] *= -1
 
         local_pts = (rot_init.T @ pts_centered.T).T
-        mins = np.percentile(local_pts, 5, axis=0)
-        maxs = np.percentile(local_pts, 95, axis=0)
+        mins = np.min(local_pts, axis=0)
+        maxs = np.max(local_pts, axis=0)
         scale_init = np.maximum(maxs - mins, [0.03, 0.03, 0.01])
 
         fitted_box = Box.from_transformation(rot_init, center_init, scale_init)
@@ -365,20 +388,20 @@ class MethodAMultiView:
         img1 = images.get(idx1) if (images and idx1 in images) else sequence.get_image(idx1)
         img2 = images.get(idx2) if (images and idx2 in images) else sequence.get_image(idx2)
 
-        # Step 2: 2D corner localization on keyframes
+        # Step 2: 2D corner localization on keyframes using deep 8-corner detector
         corners1 = np.empty((0, 2))
         corners2 = np.empty((0, 2))
         if img1 is not None:
-            res_c1 = self.segmenter.detect_corners(img1)
-            corners1 = res_c1.get("corners_2d", np.empty((0, 2)))
+            res_c1 = self.detector.detect(img1) if hasattr(self.detector, 'detect') else self.detector.detect_corners(img1)
+            corners1 = res_c1.get("corners_8_2d") if res_c1.get("corners_8_2d") is not None else res_c1.get("corners_2d", np.empty((0, 2)))
         if len(corners1) < 4:
-            corners1 = sequence.get_corners_2d(idx1, self.segmenter)
+            corners1 = sequence.get_corners_2d(idx1, self.detector)
 
         if img2 is not None:
-            res_c2 = self.segmenter.detect_corners(img2)
-            corners2 = res_c2.get("corners_2d", np.empty((0, 2)))
+            res_c2 = self.detector.detect(img2) if hasattr(self.detector, 'detect') else self.detector.detect_corners(img2)
+            corners2 = res_c2.get("corners_8_2d") if res_c2.get("corners_8_2d") is not None else res_c2.get("corners_2d", np.empty((0, 2)))
         if len(corners2) < 4:
-            corners2 = sequence.get_corners_2d(idx2, self.segmenter)
+            corners2 = sequence.get_corners_2d(idx2, self.detector)
 
         # Step 3: Quality gate validation of frame pair
         q_frame1 = self.quality_gate.validate_frame(img1, corners1, frame1.image_width, frame1.image_height)

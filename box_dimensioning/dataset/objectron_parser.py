@@ -109,28 +109,18 @@ class ObjectronSequence:
         return None
 
     def get_corners_2d(self, index: int, segmenter=None) -> np.ndarray:
-        """Retrieves 2D corner locations via image segmentation or realistic sensor observations."""
+        """Retrieves 2D corner locations via image segmentation. Never uses ground-truth during inference."""
         img = self.get_image(index)
         if img is not None and segmenter is not None:
-            res = segmenter.detect_corners(img)
-            c = res.get("corners_2d")
+            if hasattr(segmenter, "detect"):
+                res = segmenter.detect(img)
+            elif hasattr(segmenter, "detect_corners"):
+                res = segmenter.detect_corners(img)
+            else:
+                res = {}
+            c = res.get("corners_8_2d") if res.get("corners_8_2d") is not None else res.get("corners_2d")
             if c is not None and len(c) >= 4:
-                return c
-
-        # If offline sequence without raw video file, use frame observation with realistic detector noise (2px)
-        if index < len(self.frame_annotations):
-            fa = self.frame_annotations[index]
-            kps = fa.get("keypoints_2d")
-            if kps is not None and len(kps) >= 8:
-                pts = np.copy(kps[:, :2])
-                frame = self.get_frame(index)
-                if np.max(pts) < 10.0:
-                    pts[:, 0] *= frame.image_width
-                    pts[:, 1] *= frame.image_height
-                # Add realistic 2.0 px corner detector uncertainty
-                rng = np.random.RandomState(42 + index)
-                noise = rng.normal(0.0, 2.0, pts.shape)
-                return pts + noise
+                return np.asarray(c, dtype=np.float64)
 
         return np.empty((0, 2), dtype=np.float64)
 

@@ -228,11 +228,22 @@ class CameraBoxTracker:
         return False, (0, 0, 0, 0)
 
     def _ensure_camera_matrix(self, width: int, height: int) -> np.ndarray:
-        """Constructs camera intrinsic matrix if not pre-configured."""
+        """Constructs or adapts camera intrinsic matrix for frame orientation and resolution."""
         if self.camera_matrix is not None:
+            # Check if frame resolution or portrait/landscape orientation changed
+            orig_cx = self.camera_matrix[0, 2]
+            orig_cy = self.camera_matrix[1, 2]
+            if orig_cx > 0 and orig_cy > 0:
+                if abs(orig_cx - width / 2.0) > 5.0 or abs(orig_cy - height / 2.0) > 5.0:
+                    scale_x = width / (orig_cx * 2.0)
+                    scale_y = height / (orig_cy * 2.0)
+                    self.camera_matrix[0, 0] *= scale_x
+                    self.camera_matrix[1, 1] *= scale_y
+                    self.camera_matrix[0, 2] = width / 2.0
+                    self.camera_matrix[1, 2] = height / 2.0
             return self.camera_matrix
 
-        # Default webcams / laptop cameras typically have ~60-65 degree FOV
+        # Default webcams / smartphone cameras typically have ~60-65 degree FOV
         fov_deg = 62.0
         max_dim = max(width, height)
         f = (max_dim / 2.0) / math.tan(math.radians(fov_deg / 2.0))

@@ -4,24 +4,27 @@ to perform single-view metrology, scaled with sparse AR feature points to fit an
 Evaluated on the same metrics as Method A (accuracy, failure modes, runtime) for Criterion A5.
 """
 
-from typing import Tuple, Dict, Optional, List
+from typing import Tuple, Dict, Optional, List, Any
 import time
 import cv2
 import numpy as np
 
 from box_dimensioning.dataset.box_geometry import Box, compute_volumetric_weight
 from box_dimensioning.dataset.objectron_parser import FrameGeometry, ObjectronSequence
+from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
 from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
-from box_dimensioning.pipeline.quality_gate import QualityGate, QualityReport
+from box_dimensioning.pipeline.quality_gate import QualityGate, QualityReport, QualityReason
 from box_dimensioning.pipeline.method_a_multiview import MeasurementResult
+from box_dimensioning.pipeline.scale_anchor import detect_reference_rectangle
 
 
 class MethodBSingleView:
     """Single-view metrology dimensioning pipeline."""
 
-    def __init__(self, quality_gate: Optional[QualityGate] = None):
+    def __init__(self, quality_gate: Optional[QualityGate] = None, detector: Optional[Any] = None):
         self.quality_gate = quality_gate or QualityGate()
-        self.segmenter = ClassicalBoxSegmenter()
+        self.detector = detector or DeepBoxDetector()
+        self.segmenter = self.detector  # polymorphic alias
 
     def select_best_frame(
         self,
@@ -147,16 +150,46 @@ class MethodBSingleView:
         frame = sequence.get_frame(frame_idx)
         img = images.get(frame_idx) if (images and frame_idx in images) else sequence.get_image(frame_idx)
 
-        # Detect 2D corners
+        # Detect 2D corners using deep detector
         corners = np.empty((0, 2))
         if img is not None:
-            res_c = self.segmenter.detect_corners(img)
-            corners = res_c.get("corners_2d", np.empty((0, 2)))
+            res_c = self.detector.detect(img) if hasattr(self.detector, 'detect') else self.detector.detect_corners(img)
+            corners = res_c.get("corners_8_2d") if res_c.get("corners_8_2d") is not None else res_c.get("corners_2d", np.empty((0, 2)))
         if len(corners) < 4:
-            corners = sequence.get_corners_2d(frame_idx, self.segmenter)
+            corners = sequence.get_corners_2d(frame_idx, self.detector)
 
         # Quality gate validation
         q_report = self.quality_gate.validate_frame(img, corners, frame.image_width, frame.image_height)
+
+        # Check for scale anchor (reference card or A4 paper)
+        ref_match = None
+        if img is not None:
+            ref_match = detect_reference_rectangle(img)
+
+        # Honest scale check: If no reference card, no AR plane, and no sparse point cloud exist:
+        if ref_match is None and len(frame.planes) == 0 and len(frame.point_cloud) < 4:
+            q_scale = QualityReport(
+                status="REJECTED",
+                reason_code=QualityReason.SCALE_UNAVAILABLE,
+                blur_score=q_report.blur_score,
+                is_blurry=q_report.is_blurry,
+                is_truncated=q_report.is_truncated,
+                details={"message": "Scale unavailable for single-view metrology. Place an ISO ID-1 credit card or A4 reference sheet in view."}
+            )
+            lat_sec = float(time.perf_counter() - t_start)
+            return MeasurementResult(
+                status="REJECTED",
+                method="METHOD_B_SINGLEVIEW",
+                dimensions_cm={"length": 0.0, "width": 0.0, "height": 0.0},
+                volumetric_weight_kg=0.0,
+                measured_box_3d=None,
+                quality_report=q_scale,
+                latency_seconds=round(lat_sec, 4),
+                selected_frame_indices=[frame_idx],
+                fit_residual=0.999,
+                reprojected_frame_index=frame_idx,
+                reprojected_wireframe_2d=None
+            )
 
         # Ground plane metrology
         normal, d = self.estimate_ground_plane(frame)

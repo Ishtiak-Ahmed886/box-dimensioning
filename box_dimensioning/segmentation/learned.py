@@ -57,7 +57,16 @@ class LearnedBoxSegmenter:
         return np.array(feats, dtype=np.float32)
 
     def detect_corners(self, image: np.ndarray, candidate_bounding_rect: Optional[Tuple[int, int, int, int]] = None) -> Dict:
-        """Predicts 2D corner locations using the learned keypoint model."""
+        """Predicts 2D corner locations using deep detector if available, with classical fallback."""
+        try:
+            from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
+            deep_det = DeepBoxDetector()
+            res = deep_det.detect(image)
+            if res is not None and len(res.get("corners_2d", [])) >= 4:
+                return res
+        except Exception:
+            pass
+
         orig_h, orig_w = image.shape[:2]
 
         if candidate_bounding_rect is not None:

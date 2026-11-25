@@ -213,28 +213,25 @@ with tab_live:
                         det_info = detector.detect(target_raw_frame)
                         bbox = det_info.get("bounding_box", (0, 0, 0, 0))
 
-                        # Prioritize calibrated sequence geometry for test dataset, then trained corner pose model
-                        if gt_proj is not None:
-                            verts_gt = gt_proj[1:9]
-                            bx = int(max(0, np.min(verts_gt[:, 0])))
-                            by = int(max(0, np.min(verts_gt[:, 1])))
-                            bw = int(min(w_stg, np.max(verts_gt[:, 0])) - bx)
-                            bh = int(min(h_stg, np.max(verts_gt[:, 1])) - by)
+                        # Honest Inference: Use deep 8-corner pose or YOLO detector predictions, keeping ground truth out of inference
+                        if det_info.get("method") == "custom_trained_yolo_corner_pose" and len(det_info.get("corners_8_2d", [])) == 8:
+                            raw_2d_corners = det_info["corners_8_2d"]
+                            bx, by, bw, bh = det_info.get("bounding_box", bbox)
                             bbox = (bx, by, bw, bh)
-                            raw_2d_corners = verts_gt
-                        elif det_info.get("method") == "custom_trained_yolo_corner_pose" and len(det_info.get("corners_8_2d", [])) == 8:
+                        elif det_info.get("corners_8_2d") is not None and len(det_info["corners_8_2d"]) == 8:
                             raw_2d_corners = det_info["corners_8_2d"]
                             bx, by, bw, bh = det_info.get("bounding_box", bbox)
                             bbox = (bx, by, bw, bh)
                         else:
                             raw_2d_corners = det_info.get("corners_2d", np.empty((0, 2)))
+                            bx, by, bw, bh = det_info.get("bounding_box", bbox)
+                            bbox = (bx, by, bw, bh)
 
                         # Stage 1: Original Raw Frame
                         stg1_img = target_raw_frame.copy()
 
                         # Stage 2: YOLO Detection Bounding Box
                         stg2_img = target_raw_frame.copy()
-                        bx, by, bw, bh = bbox
                         if bw > 10 and bh > 10:
                             cv2.rectangle(stg2_img, (bx, by), (bx + bw, by + bh), (255, 200, 0), 4)
                             cv2.putText(stg2_img, f"Parcel BBox ({det_info.get('method', 'detector')})", (bx, max(35, by - 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
@@ -253,20 +250,15 @@ with tab_live:
                         stg4_img = target_raw_frame.copy()
                         is_fallback_projection = False
 
-                        # If sequence has calibrated 3D ground truth, ALWAYS render the exact verified 3D cuboid
-                        if gt_proj is not None:
-                            reproj_pts = gt_proj
-                            res["reprojected_wireframe_2d"] = reproj_pts
-                            is_fallback_projection = True
-                        else:
-                            reproj_pts = res.get("reprojected_wireframe_2d")
-                            # If multi-view triangulation is absent or degenerate, fallback to deep 8-corner pose
-                            if reproj_pts is None or len(reproj_pts) < 9:
-                                if det_info.get("corners_8_2d") is not None and len(det_info["corners_8_2d"]) == 8:
-                                    kpts = det_info["corners_8_2d"]
-                                    center = np.mean(kpts, axis=0, keepdims=True)
-                                    reproj_pts = np.vstack([center, kpts])
-                                    res["reprojected_wireframe_2d"] = reproj_pts
+                        # Project the actual reconstructed 3D box onto the frame
+                        reproj_pts = res.get("reprojected_wireframe_2d")
+                        if reproj_pts is None or len(reproj_pts) < 9:
+                            if det_info.get("corners_8_2d") is not None and len(det_info["corners_8_2d"]) == 8:
+                                kpts = det_info["corners_8_2d"]
+                                center = np.mean(kpts, axis=0, keepdims=True)
+                                reproj_pts = np.vstack([center, kpts])
+                                res["reprojected_wireframe_2d"] = reproj_pts
+                                is_fallback_projection = True
 
                         has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
 
@@ -635,7 +627,14 @@ with tab_live:
         # Mode 1: Browser / Phone Camera input (Native HTML5 camera on Streamlit Cloud & Mobile)
         if "Browser / Phone" in cam_mode:
             st.subheader("📸 Browser Live Device Camera")
-            st.info("💡 **Instructions:** Place or hold a cardboard box, parcel, or rectangular container in clear view of your camera. Take a photo to detect its 3D wireframe and calculate dimensions.")
+            st.info("💡 **Instructions:** Place or hold a cardboard box or parcel in clear view. Optionally place an ID card or A4 paper next to it as a physical scale anchor.")
+            
+            ref_choice = st.selectbox(
+                "Scale Reference Anchor (Fiducial):",
+                ["None (Pinhole Angular Estimation)", "Credit Card (ISO ID-1: 85.6 x 54 mm)", "A4 Paper (297 x 210 mm)", "A5 Paper (210 x 148 mm)"],
+                index=0
+            )
+
             photo = st.camera_input("Take a photo of the parcel/box")
             if photo is not None:
                 img_bytes = photo.getvalue()
@@ -647,7 +646,22 @@ with tab_live:
                         tracker_type=cam_engine,
                     )
                     res = cam_tracker.process_frame(frame)
-                    annotated_rgb = cv2.cvtColor(res["annotated_frame"], cv2.COLOR_BGR2RGB)
+                    annotated_bgr = res["annotated_frame"].copy()
+
+                    # Scale anchor detection if requested
+                    if "None" not in ref_choice:
+                        from box_dimensioning.pipeline.scale_anchor import detect_reference_rectangle
+                        ref_key = "Credit Card" if "Credit Card" in ref_choice else "A4 Paper" if "A4" in ref_choice else "A5 Paper"
+                        ref_res = detect_reference_rectangle(frame, ref_name=ref_key)
+                        if ref_res is not None:
+                            st.success(f"🎯 **Scale Anchor Verified:** Detected {ref_res['ref_name']} (Scale: {ref_res['scale_mm_per_px']:.3f} mm/px)")
+                            ref_pts = np.int32(ref_res['corners'])
+                            cv2.polylines(annotated_bgr, [ref_pts], True, (255, 255, 0), 3, cv2.LINE_AA)
+                            cv2.putText(annotated_bgr, f"Scale Anchor: {ref_res['ref_name']}", (int(ref_pts[0][0]), max(20, int(ref_pts[0][1] - 8))), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                        else:
+                            st.warning("⚠️ **Reference Anchor Not Detected:** Could not locate rectangular reference object. Using camera pinhole distance geometry.")
+
+                    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
                     frame_placeholder.image(annotated_rgb, channels="RGB", use_container_width=True)
 
                     d = res["dimensions_cm"]

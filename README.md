@@ -5,7 +5,7 @@
 <br/>
 
 [![Live App](https://img.shields.io/badge/🚀%20Live%20Demo-Streamlit%20Cloud-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://ishtiak-ahmed886-box-dimensi-box-dimensioningapplive-app-al7bqt.streamlit.app/)
-[![Tests](https://img.shields.io/badge/✅%20Tests-10%2F10%20Passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/✅%20Tests-27%2F27%20Passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white)]()
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge)](LICENSE)
 
