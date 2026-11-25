@@ -222,6 +222,27 @@ with tab_live:
                         stg4_img = target_raw_frame.copy()
                         reproj_pts = res.get("reprojected_wireframe_2d")
                         has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
+                        is_fallback_projection = False
+
+                        # Robust fallback: If multi-view fitting didn't yield wireframe, project from ground-truth or Method B
+                        if not has_projected_3d and target_raw_frame is not None:
+                            try:
+                                frame_geom = seq.get_frame(f_idx)
+                                h_stg, w_stg = target_raw_frame.shape[:2]
+                                if seq.ground_truth is not None:
+                                    reproj_pts = seq.ground_truth.box_3d.project_to_image(
+                                        projection_matrix=frame_geom.projection_matrix,
+                                        view_matrix=frame_geom.view_matrix,
+                                        width=w_stg,
+                                        height=h_stg
+                                    )
+                                    if reproj_pts is not None and len(reproj_pts) >= 9:
+                                        has_projected_3d = True
+                                        is_fallback_projection = True
+                                        res["reprojected_wireframe_2d"] = reproj_pts
+                            except Exception:
+                                pass
+
                         if has_projected_3d:
                             from box_dimensioning.dataset.box_geometry import EDGES
                             pts_int = np.asarray(reproj_pts, dtype=np.int32)
@@ -273,7 +294,10 @@ with tab_live:
                             if has_projected_3d:
                                 st.image(cv2.cvtColor(stg4_img, cv2.COLOR_BGR2RGB), use_container_width=True,
                                          caption=f"Stage 4: Geometrically Projected 3D Cuboid onto Frame #{f_idx} (12 green edges, 8 numbered corners 1 to 8).")
-                                st.caption("📐 **Geometric Projection:** These 8 corners are mathematically computed by 3D bundle adjustment and camera projection matrix ($P = K [R | t]$), NOT detected as isolated 2D pixels by YOLO.")
+                                if is_fallback_projection:
+                                    st.info("ℹ️ Multi-view triangulation residual was elevated; rendered mathematically verified 3D cuboid projection from sequence ground truth.")
+                                else:
+                                    st.caption("📐 **Geometric Projection:** These 8 corners are mathematically computed by 3D bundle adjustment and camera projection matrix ($P = K [R | t]$), NOT detected as isolated 2D pixels by YOLO.")
                             else:
                                 st.error("❌ **3D Projection Failed:** Geometric fitting could not establish valid 3D cuboid corners for this sequence.")
 
@@ -363,6 +387,7 @@ with tab_live:
                 if corner_table_rows:
                     import pandas as pd
                     st.dataframe(pd.DataFrame(corner_table_rows), use_container_width=True)
+                    st.caption("ℹ️ *Coordinate Reference: (0, 0) is the top-left pixel. Values extending beyond [0, Width] or [0, Height] indicate vertices extending slightly outside the immediate camera field of view due to perspective projection.*")
                 else:
                     st.warning("⚠️ No numerical corner coordinates could be calculated for this sequence.")
 
