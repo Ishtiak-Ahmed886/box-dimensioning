@@ -478,7 +478,9 @@ class CameraBoxTracker:
         initial_scale = np.array([est_w_m, est_h_m, est_d_m])
 
         result = solve_epnp_cuboid(
-            corners_2d, K, self.dist_coeffs, initial_scale=initial_scale
+            corners_2d, K, self.dist_coeffs,
+            initial_scale=initial_scale,
+            ground_normal=np.array([0.0, 1.0, 0.0]),  # heuristic: Y-up for phone-over-table
         )
 
         corners_3d = result['corners_3d']

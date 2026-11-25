@@ -78,6 +78,7 @@ def solve_epnp_cuboid(
     K: np.ndarray,
     dist_coeffs: Optional[np.ndarray] = None,
     initial_scale: Optional[np.ndarray] = None,
+    ground_normal: Optional[np.ndarray] = None,
 ) -> Dict:
     """Estimates 3D rigid cuboid pose and dimensions from 8 detected 2D corners.
 
@@ -87,6 +88,8 @@ def solve_epnp_cuboid(
     3. Refine pose with cv2.solvePnPRefineLM for sub-pixel accuracy.
     4. Run Nelder-Mead optimization over all 9 parameters (R, t, scale) to
        jointly minimize reprojection error while maintaining rigid cuboid.
+    5. If ground_normal is provided, snap the cuboid base flush onto the ground
+       plane and align the box's gravity axis.
 
     Args:
         corners_2d: (8, 2) array of detected 2D corner keypoints in image pixels.
@@ -94,6 +97,9 @@ def solve_epnp_cuboid(
         dist_coeffs: distortion coefficients. Defaults to zero.
         initial_scale: (3,) initial guess for box dimensions [sx, sy, sz] in meters.
                        Defaults to [0.20, 0.15, 0.10] (a typical small parcel).
+        ground_normal: (3,) unit normal of the support surface (pointing up).
+                       If provided, the cuboid's Y-axis is aligned with this normal
+                       and the base is snapped flush onto the ground plane.
 
     Returns:
         dict with keys:
@@ -186,7 +192,21 @@ def solve_epnp_cuboid(
     # --- Stage 4: Reconstruct final 3D cuboid corners in camera frame ---
     R, _ = cv2.Rodrigues(final_rvec)
     object_pts_scaled = UNIT_CUBOID_8 * final_scale.reshape(1, 3)
+
+    # --- Stage 4b: Ground plane alignment and snapping ---
+    if ground_normal is not None:
+        from box_dimensioning.pipeline.ground_plane import (
+            align_rotation_to_gravity, snap_cuboid_to_ground
+        )
+        gn = np.asarray(ground_normal, dtype=np.float64)
+        gn = gn / (np.linalg.norm(gn) + 1e-12)
+        R = align_rotation_to_gravity(R, gn, gravity_axis=1)
+
     corners_3d_cam = (R @ object_pts_scaled.T).T + final_tvec.reshape(1, 3)
+
+    if ground_normal is not None:
+        corners_3d_cam = snap_cuboid_to_ground(corners_3d_cam, gn)
+
     center_3d = np.mean(corners_3d_cam, axis=0)
 
     # Compute final reprojection
