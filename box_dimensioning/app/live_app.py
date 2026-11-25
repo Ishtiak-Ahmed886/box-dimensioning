@@ -19,6 +19,13 @@ import urllib.request
 import streamlit as st
 import numpy as np
 
+st.set_page_config(
+    page_title="Box Dimensioning & Volumetric-Weight Billing",
+    page_icon="📦",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 try:
     import cv2
 except ImportError as cv_err:
@@ -26,25 +33,8 @@ except ImportError as cv_err:
              f"Details: `{cv_err}`\n\n"
              "**Resolution:** Streamlit Cloud requires compatible C-libraries or Python 3.11.\n"
              "1. Ensure **Python 3.11** is selected in your Streamlit Cloud Dashboard (**Manage app ⚙️ -> Settings -> General -> Python version -> 3.11**).\n"
-             "2. Required apt packages are specified in `packages.txt` (`libgl1-mesa-glx`, `libgl1`, `ffmpeg`).")
+             "2. Required apt packages are specified in `packages.txt` (`libgl1`, `libglib2.0-0`, `ffmpeg`).")
     st.stop()
-
-from box_dimensioning.calibration.camera_calibrator import CameraCalibrator
-from box_dimensioning.dataset.objectron_parser import load_sequence
-from box_dimensioning.pipeline.dimensioner import BoxDimensioner
-from box_dimensioning.calibration.intrinsics_checker import draw_projected_box_wireframe
-from box_dimensioning.pipeline.custom_video_processor import process_custom_mobile_video
-from box_dimensioning.visualization.box_3d_renderer import create_interactive_3d_plotly_figure
-from box_dimensioning.pipeline.camera_box_tracker import CameraBoxTracker, TrackingState
-from box_dimensioning.app.live_cam_tracker import generate_synthetic_box_frame
-
-
-st.set_page_config(
-    page_title="Box Dimensioning & Volumetric-Weight Billing",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 st.title("📦 Box Dimensioning from Phone Video for Volumetric-Weight Billing")
 st.markdown(
