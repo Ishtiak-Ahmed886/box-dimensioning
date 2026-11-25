@@ -41,41 +41,37 @@ Experience the live end-to-end 3D reconstruction pipeline on Streamlit Cloud:
 
 ## 🏗️ System Architecture
 
-The pipeline processes handheld mobile video through four specialized stages combining deep learning, camera geometry, and non-linear optimization:
+The pipeline processes handheld mobile video through four streamlined stages:
 
 ```mermaid
-flowchart TD
-    A["📱 Handheld Mobile Video (.mp4 / .mov)"] --> B["Smart Camera Calibration<br/>(EXIF / Sensor DB / Heuristic F_norm)"]
-    A --> C["Quality Gate Filter<br/>(Laplacian Motion Blur & Boundary Checks)"]
-    
-    C -->|Pass| D["Multi-Tier 2D/3D Detector"]
-    
-    subgraph Detector_Hierarchy ["Multi-Tier Detection Stack"]
-        D1["Priority 1: YOLOv8-Pose 8-Corner Model<br/>(custom_box_corner_pose.pt · mAP50: 99.5%)"]
-        D2["Priority 2: Custom Box YOLO<br/>(custom_box_yolo.pt)"]
-        D3["Priority 3: General Object YOLO<br/>(yolov8n.pt · Filtered for parcels)"]
-        D4["Priority 4: Central Contour Fallback<br/>(Bilateral filter + Hull extraction)"]
-        D1 -->|Fallback if conf < 0.25| D2
-        D2 -->|Fallback| D3
-        D3 -->|Fallback| D4
-    end
-    
-    D --> E{"Reconstruction Engine"}
-    
-    subgraph Reconstruction ["3D Spatial Reconstruction"]
-        E1["Method A: Multi-View DLT Triangulation<br/>(Convex Hull Bounded SIFT Matching)"]
-        E2["Method B: Single-View Metrology<br/>(Ground Plane Homography + Known Scale Anchor)"]
-        E3["Direct SOTA: EPnP Rigid Cuboid Fitting<br/>(Orthogonal Box Prior + Levenberg-Marquardt)"]
-    end
-    
-    E --> E1
-    E --> E2
-    E --> E3
-    
-    E1 & E2 & E3 --> F["Geometric Validation & Dimension Extractor<br/>(Bounding Cuboid L × W × H in cm)"]
-    F --> G["Volumetric Weight Calculation<br/>(DHL/FedEx/UPS Standard: L×W×H / 5000)"]
-    F --> H["Interactive 3D WebGL Digital Twin & 2D HUD"]
+flowchart LR
+    A["📱 Phone Video<br/><code>.mp4 / .mov</code>"] --> B["⚡ Quality Gate<br/><code>Motion Deblur + EXIF</code>"]
+    B --> C["🤖 8-Corner Pose<br/><code>YOLOv8-Pose (99.5%)</code>"]
+    C --> D["📐 3D Reconstruction<br/><code>EPnP + Multi-View DLT</code>"]
+    D --> E["📦 3D Digital Twin<br/><code>L × W × H + Vol. Weight</code>"]
 ```
+
+| Stage | Component | Core Technique | Purpose |
+|:---:|:---|:---|:---|
+| 1️⃣ | **Smart Intrinsics & Quality Gate** | EXIF DB + Laplacian Variance | Filters blur & retrieves camera focal length |
+| 2️⃣ | **Multi-Tier Box Detector** | YOLOv8-Pose (mAP50: 99.5%) | Regresses all 8 box corner keypoints directly |
+| 3️⃣ | **3D Spatial Reconstruction** | EPnP Rigid Fitting + DLT Triangulation | Converts 2D rays into metric 3D cuboid |
+| 4️⃣ | **Metric & Weight Engine** | Courier formula ($L \times W \times H / 5000$) | Generates dimensions & interactive WebGL HUD |
+
+<details>
+<summary><b>⚙️ Detailed Multi-Tier Fallback & Reconstruction Architecture (Click to expand)</b></summary>
+
+- **Detector Priority Stack**:
+  1. `custom_box_corner_pose.pt` (*Priority 1*): YOLOv8-Pose regressing 8 3D vertices directly.
+  2. `custom_box_yolo.pt` (*Priority 2*): Custom-trained parcel bounding box detector.
+  3. `yolov8n.pt` (*Priority 3*): General object detector with parcel class filtering.
+  4. Classical Central Contour (*Priority 4*): Bilateral filtering + convex hull fallback.
+- **3D Reconstruction Engines**:
+  - **EPnP Rigid Solver (SOTA)**: Closed-form Perspective-n-Point fitting with Levenberg-Marquardt refinement enforcing orthogonal opposite faces.
+  - **Method A (Multi-View DLT)**: Triangulates convex-hull bounded SIFT matches across baseline frames.
+  - **Method B (Single-View Metrology)**: Ground-plane homography with A4 paper / credit card scale anchor.
+
+</details>
 
 ---
 
