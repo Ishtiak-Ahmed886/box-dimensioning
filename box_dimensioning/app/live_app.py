@@ -252,6 +252,7 @@ with tab_live:
                         # Stage 4: Reprojected 3D Cuboid Wireframe
                         stg4_img = target_raw_frame.copy()
                         reproj_pts = res.get("reprojected_wireframe_2d")
+                        is_fallback_projection = False
 
                         # Validate reprojection accuracy: if triangulation was noisy/squashed/out-of-bounds, use verified sequence geometry
                         needs_geometry_refinement = True
@@ -266,6 +267,7 @@ with tab_live:
                         if (needs_geometry_refinement or reproj_pts is None) and gt_proj is not None:
                             reproj_pts = gt_proj
                             res["reprojected_wireframe_2d"] = reproj_pts
+                            is_fallback_projection = True
 
                         has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
 
