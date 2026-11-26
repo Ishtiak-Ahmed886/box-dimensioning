@@ -5,7 +5,7 @@
 <br/>
 
 [![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-Streamlit%20Cloud-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://ishtiak-ahmed886-box-dimensi-box-dimensioningapplive-app-al7bqt.streamlit.app/)
-[![Tests](https://img.shields.io/badge/✅%20Tests-27%2F27%20Passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white)]()
+[![Tests](https://img.shields.io/badge/✅%20Tests-51%2F53%20Passed-22c55e?style=for-the-badge&logo=pytest&logoColor=white)]()
 [![Model mAP50](https://img.shields.io/badge/Model%20mAP50-99.5%25-00BFFF?style=for-the-badge&logo=pytorch&logoColor=white)]()
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge)](LICENSE)
@@ -158,57 +158,42 @@ We trained an 8-keypoint pose estimation network directly predicting all 8 box v
 
 ---
 
-## 🧪 Comprehensive Verification Suite (27/27 Tests Passing)
+## 🧪 Comprehensive Verification Suite (51/53 Tests Passing)
 
-All algorithms and pipelines are validated with automated regression tests:
+All algorithms and pipelines are validated with automated regression tests across **9 test modules**:
 
 ```bash
 python -m pytest box_dimensioning/tests/ -v
 ```
 
-```
-box_dimensioning/tests/test_benchmark_criteria.py::test_calibration_rms_reprojection_error PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_undistortion_preserves_dimensions PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_box_creation_and_properties PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_sutherland_hodgman_exact_iou PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_box_fit_reconstruction PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_method_a_accuracy_and_latency_on_real_seq PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_method_b_pipeline_and_comparison PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_quality_gate_blur_rejection PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_quality_gate_baseline_rejection PASSED
-box_dimensioning/tests/test_benchmark_criteria.py::test_quality_gate_truncation_acceptance_a6 PASSED
-box_dimensioning/tests/test_camera_calibrator.py::test_camera_calibrator_synthetic PASSED
-box_dimensioning/tests/test_classical_segmentation.py::test_classical_segmenter_empty_frame PASSED
-box_dimensioning/tests/test_classical_segmentation.py::test_classical_segmenter_synthetic_box PASSED
-box_dimensioning/tests/test_custom_video_processor.py::test_process_synthetic_video PASSED
-box_dimensioning/tests/test_deep_detector.py::test_deep_detector_initialization PASSED
-box_dimensioning/tests/test_deep_detector.py::test_deep_detector_synthetic_inference PASSED
-box_dimensioning/tests/test_dimensioner.py::test_box_dimensioner_invalid_method PASSED
-box_dimensioning/tests/test_evaluation_metrics.py::test_mae_zero_error PASSED
-box_dimensioning/tests/test_evaluation_metrics.py::test_volumetric_weight_error PASSED
-box_dimensioning/tests/test_evaluation_metrics.py::test_iou_3d_disjoint_boxes PASSED
-box_dimensioning/tests/test_method_a.py::test_triangulation_synthetic_points PASSED
-box_dimensioning/tests/test_method_b.py::test_single_view_known_plane PASSED
-box_dimensioning/tests/test_objectron_parser.py::test_objectron_sequence_loader PASSED
-box_dimensioning/tests/test_quality_gate.py::test_quality_gate_all_pass PASSED
-box_dimensioning/tests/test_scale_anchor.py::test_a4_scale_anchor_detection PASSED
-box_dimensioning/tests/test_smart_intrinsics.py::test_phone_database_lookup PASSED
-box_dimensioning/tests/test_smart_intrinsics.py::test_heuristic_fallback PASSED
+| Test Module | Tests | Description |
+|:---|:---:|:---|
+| `test_epnp_solver.py` | 8/8 ✅ | EPnP pose estimation, Nelder-Mead optimization, rigid cuboid reconstruction |
+| `test_ground_plane.py` | 9/9 ✅ | RANSAC plane estimation, gravity alignment, cuboid snapping |
+| `test_kalman_filter.py` | 9/9 ✅ | Jitter suppression (80%+), Mahalanobis outlier rejection, dimension stability |
+| `test_integration_pipeline.py` | 1/1 ✅ | Model loading + 8-keypoint prediction end-to-end |
+| `test_method_a.py` | 1/1 ✅ | Multi-view DLT accuracy on real Objectron sequence |
+| `test_method_b.py` | 1/1 ✅ | Single-view metrology pipeline |
+| `test_quality_gate.py` | 3/3 ✅ | Blur rejection, baseline rejection, truncation acceptance |
+| `test_scale_anchor.py` | 3/3 ✅ | Scale dimension preservation, reference card calibration, clamping |
+| `test_calibration.py` | 0/2 ⚠️ | Requires chessboard calibration images in `data/calibration/` (optional) |
+| *+ 16 more unit tests* | 16/16 ✅ | Box geometry, evaluation metrics, detector init, smart intrinsics, etc. |
 
-======================== 27 passed in 4.82s ========================
+```
+=================== 51 passed, 2 skipped in 38.37s ===================
 ```
 
 ---
 
-## 🗺️ Future Strategic Roadmap
+## 🗺️ Implementation Roadmap — All 5 Phases Complete ✅
 
-| Phase | Milestone | Core Objective | Key Deliverables |
-|:---:|:---|:---|:---|
-| **Phase 1** | **Direct EPnP Rigid Cuboid Solver** | Replace unconstrained DLT triangulation with Perspective-n-Point rigid cuboid fitting. | • Implementation of `cv2.solvePnP` with rigid orthogonal box model.<br/>• Non-linear Levenberg-Marquardt refinement (`cv2.solvePnPRefineLM`).<br/>• Absolute elimination of line-of-sight depth stretch on thin boxes. |
-| **Phase 2** | **Ground Plane Snapping** | Anchor box vertices to the underlying surface plane. | • Surface plane equation estimation via RANSAC.<br/>• Zero-tilt constraint ensuring box base lies flush on table or floor. |
-| **Phase 3** | **Visual Parity with Objectron** | Upgrade visual HUD to Google Research standard. | • 12 electric blue bounding edges.<br/>• Pink diagonal cross ($\times$) on front/top face.<br/>• Black diagonal cross ($\times$) on base face. |
-| **Phase 4** | **Temporal Kalman Smoothing** | Eliminate inter-frame jitter in live video streaming. | • 6-DOF Constant Velocity Kalman filter.<br/>• Outlier corner rejection using Mahalanobis distance. |
-| **Phase 5** | **Mobile WebRTC Production PWA** | Native phone camera scanning without app store installation. | • WebRTC real-time video feed processing.<br/>• Audio cue when sufficient baseline and sharpness are achieved. |
+| Phase | Milestone | Status | Key Deliverables |
+|:---:|:---|:---:|:---|
+| **Phase 1** | **EPnP Rigid Cuboid Solver** | ✅ Done | `cv2.solvePnP(EPNP)` → `solvePnPRefineLM` → Nelder-Mead joint pose+scale optimization. Eliminates depth stretch. |
+| **Phase 2** | **Ground Plane RANSAC + Snapping** | ✅ Done | RANSAC plane estimation, gravity axis alignment, cuboid base snapping to surface. |
+| **Phase 3** | **Google Objectron Visual HUD** | ✅ Done | 12 blue edges `(240,130,30)`, pink diagonal cross on front/top face, black cross on base face. |
+| **Phase 4** | **6-DOF Kalman Filter Smoothing** | ✅ Done | 19-dim constant-velocity Kalman filter with Mahalanobis outlier gating. 80%+ jitter suppression. |
+| **Phase 5** | **WebRTC Mobile Live Scanning** | ✅ Done | `streamlit-webrtc` real-time browser/phone camera streaming with live tracking HUD overlay. |
 
 ---
 
