@@ -633,58 +633,111 @@ with tab_live:
             frame_placeholder = st.empty()
             metric_placeholder = st.empty()
 
-        # Mode 1: Browser / Phone Camera input (Native HTML5 camera on Streamlit Cloud & Mobile)
+        # Mode 1: Browser / Phone Camera input (WebRTC real-time streaming + photo fallback)
         if "Browser / Phone" in cam_mode:
             st.subheader("📸 Browser Live Device Camera")
-            st.info("💡 **Instructions:** Place or hold a cardboard box or parcel in clear view. Optionally place an ID card or A4 paper next to it as a physical scale anchor.")
-            
+
+            webrtc_available = False
+            try:
+                from streamlit_webrtc import webrtc_streamer, WebRtcMode
+                from box_dimensioning.app.webrtc_processor import BoxVideoProcessor
+                webrtc_available = True
+            except ImportError:
+                pass
+
+            scan_mode = st.radio(
+                "Capture Mode:",
+                ["🎥 Real-Time Video Stream (WebRTC)", "📷 Single Photo Snapshot"],
+                index=0 if webrtc_available else 1,
+                horizontal=True,
+            )
+
+            st.info("💡 **Instructions:** Place or hold a cardboard box or parcel in clear view. "
+                     "The AI detects, tracks, and measures it in real-time.")
+
             ref_choice = st.selectbox(
                 "Scale Reference Anchor (Fiducial):",
                 ["None (Pinhole Angular Estimation)", "Credit Card (ISO ID-1: 85.6 x 54 mm)", "A4 Paper (297 x 210 mm)", "A5 Paper (210 x 148 mm)"],
                 index=0
             )
 
-            photo = st.camera_input("Take a photo of the parcel/box")
-            if photo is not None:
-                img_bytes = photo.getvalue()
-                frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-                if frame is not None:
-                    cam_tracker = CameraBoxTracker(
-                        default_distance_cm=cam_dist,
-                        detection_interval=redetect_freq,
-                        tracker_type=cam_engine,
-                    )
-                    res = cam_tracker.process_frame(frame)
-                    annotated_bgr = res["annotated_frame"].copy()
+            if "Real-Time" in scan_mode and webrtc_available:
+                # --- WebRTC Real-Time Video Streaming ---
+                st.markdown("**📹 Live Camera Feed** — point your phone/laptop camera at any box:")
 
-                    # Scale anchor detection if requested
-                    if "None" not in ref_choice:
-                        from box_dimensioning.pipeline.scale_anchor import detect_reference_rectangle
-                        ref_key = "Credit Card" if "Credit Card" in ref_choice else "A4 Paper" if "A4" in ref_choice else "A5 Paper"
-                        ref_res = detect_reference_rectangle(frame, ref_name=ref_key)
-                        if ref_res is not None:
-                            st.success(f"🎯 **Scale Anchor Verified:** Detected {ref_res['ref_name']} (Scale: {ref_res['scale_mm_per_px']:.3f} mm/px)")
-                            ref_pts = np.int32(ref_res['corners'])
-                            cv2.polylines(annotated_bgr, [ref_pts], True, (255, 255, 0), 3, cv2.LINE_AA)
-                            cv2.putText(annotated_bgr, f"Scale Anchor: {ref_res['ref_name']}", (int(ref_pts[0][0]), max(20, int(ref_pts[0][1] - 8))), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-                        else:
-                            st.warning("⚠️ **Reference Anchor Not Detected:** Could not locate rectangular reference object. Using camera pinhole distance geometry.")
+                ctx = webrtc_streamer(
+                    key="box-dimensioner-live",
+                    mode=WebRtcMode.SENDRECV,
+                    video_processor_factory=BoxVideoProcessor,
+                    media_stream_constraints={
+                        "video": {"facingMode": "environment", "width": {"ideal": 640}, "height": {"ideal": 480}},
+                        "audio": False,
+                    },
+                    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                    async_processing=True,
+                )
 
-                    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
-                    frame_placeholder.image(annotated_rgb, channels="RGB", use_container_width=True)
+                # Live metric display
+                if ctx.video_processor:
+                    live_metrics = st.empty()
+                    r = ctx.video_processor.latest_result
+                    d = r.get("dimensions_cm", {"length": 0, "width": 0, "height": 0})
+                    vw = r.get("volumetric_weight_kg", 0)
+                    state = r.get("state", "INITIALIZING")
+                    fps = r.get("fps", 0)
+                    status_icon = "🟢" if state == TrackingState.TRACKING else "🟡" if state == TrackingState.INITIALIZING else "🔴"
 
-                    d = res["dimensions_cm"]
-                    vw = res["volumetric_weight_kg"]
-                    status_color = "🟢" if res["state"] == TrackingState.TRACKING else "🟡" if res["state"] == TrackingState.INITIALIZING else "🔴"
+                    with live_metrics.container():
+                        m1, m2 = st.columns(2)
+                        m1.metric("Status", f"{status_icon} {state}")
+                        m2.metric("Speed", f"{fps:.1f} FPS")
+                        m3, m4 = st.columns(2)
+                        m3.metric("Dimensions (L × W × H)", f"{d['length']:.1f} × {d['width']:.1f} × {d['height']:.1f} cm")
+                        m4.metric("Volumetric Weight", f"{vw:.3f} kg")
 
-                    with metric_placeholder.container():
-                        row1_c1, row1_c2 = st.columns(2)
-                        row1_c1.metric("Status", f"{status_color} {res['state']}")
-                        row1_c2.metric("Speed", f"{res['fps']:.1f} FPS")
+            else:
+                # --- Single Photo Snapshot (fallback) ---
+                photo = st.camera_input("Take a photo of the parcel/box")
+                if photo is not None:
+                    img_bytes = photo.getvalue()
+                    frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        cam_tracker = CameraBoxTracker(
+                            default_distance_cm=cam_dist,
+                            detection_interval=redetect_freq,
+                            tracker_type=cam_engine,
+                        )
+                        res = cam_tracker.process_frame(frame)
+                        annotated_bgr = res["annotated_frame"].copy()
 
-                        row2_c1, row2_c2 = st.columns(2)
-                        row2_c1.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
-                        row2_c2.metric("Volumetric Weight", f"{vw:.3f} kg")
+                        # Scale anchor detection if requested
+                        if "None" not in ref_choice:
+                            from box_dimensioning.pipeline.scale_anchor import detect_reference_rectangle
+                            ref_key = "Credit Card" if "Credit Card" in ref_choice else "A4 Paper" if "A4" in ref_choice else "A5 Paper"
+                            ref_res = detect_reference_rectangle(frame, ref_name=ref_key)
+                            if ref_res is not None:
+                                st.success(f"🎯 **Scale Anchor Verified:** Detected {ref_res['ref_name']} (Scale: {ref_res['scale_mm_per_px']:.3f} mm/px)")
+                                ref_pts = np.int32(ref_res['corners'])
+                                cv2.polylines(annotated_bgr, [ref_pts], True, (255, 255, 0), 3, cv2.LINE_AA)
+                                cv2.putText(annotated_bgr, f"Scale Anchor: {ref_res['ref_name']}", (int(ref_pts[0][0]), max(20, int(ref_pts[0][1] - 8))), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                            else:
+                                st.warning("⚠️ **Reference Anchor Not Detected:** Could not locate rectangular reference object. Using camera pinhole distance geometry.")
+
+                        annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+                        frame_placeholder.image(annotated_rgb, channels="RGB", use_container_width=True)
+
+                        d = res["dimensions_cm"]
+                        vw = res["volumetric_weight_kg"]
+                        status_color = "🟢" if res["state"] == TrackingState.TRACKING else "🟡" if res["state"] == TrackingState.INITIALIZING else "🔴"
+
+                        with metric_placeholder.container():
+                            row1_c1, row1_c2 = st.columns(2)
+                            row1_c1.metric("Status", f"{status_color} {res['state']}")
+                            row1_c2.metric("Speed", f"{res['fps']:.1f} FPS")
+
+                            row2_c1, row2_c2 = st.columns(2)
+                            row2_c1.metric("Dimensions (L x W x H)", f"{d['length']:.1f} x {d['width']:.1f} x {d['height']:.1f} cm")
+                            row2_c2.metric("Volumetric Weight", f"{vw:.3f} kg")
 
         # Mode 2 & 3: Continuous Stream (Local OpenCV Webcam or Simulation)
         elif run_tracker:
