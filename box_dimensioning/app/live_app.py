@@ -247,6 +247,13 @@ with tab_live:
 
                         # Stage 3: Detected 2D Corner Points (Exact 2D Vertices on Parcel)
                         stg3_img = target_raw_frame.copy()
+                        # Guard against wild keypoint outliers outside the tight YOLO 2D bbox
+                        if len(raw_2d_corners) == 8 and bw > 10 and bh > 10:
+                            margin_x, margin_y = bw * 0.12, bh * 0.12
+                            clipped = np.asarray(raw_2d_corners, dtype=np.float64).copy()
+                            clipped[:, 0] = np.clip(clipped[:, 0], bx - margin_x, bx + bw + margin_x)
+                            clipped[:, 1] = np.clip(clipped[:, 1], by - margin_y, by + bh + margin_y)
+                            raw_2d_corners = clipped
                         has_direct_2d_corners = len(raw_2d_corners) > 0
                         if has_direct_2d_corners:
                             for c_idx, c_pt in enumerate(raw_2d_corners[:8]):
@@ -255,15 +262,42 @@ with tab_live:
                                 cv2.circle(stg3_img, (cx, cy), 6, (0, 220, 255), -1, cv2.LINE_AA)
                                 cv2.putText(stg3_img, f"D{c_idx+1}", (cx + 10, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 2, cv2.LINE_AA)
 
-                        # Stage 4: Reprojected 3D Cuboid Wireframe
+                        # Stage 4: Reprojected 3D Cuboid Wireframe (EPnP Rigid Cuboid + Objectron HUD)
                         stg4_img = target_raw_frame.copy()
                         is_fallback_projection = False
+                        epnp_stage4_res = None
 
-                        # Project the actual reconstructed 3D box onto the frame
-                        reproj_pts = res.get("reprojected_wireframe_2d")
-                        if reproj_pts is None or len(reproj_pts) < 9:
-                            if det_info.get("corners_8_2d") is not None and len(det_info["corners_8_2d"]) == 8:
-                                kpts = det_info["corners_8_2d"]
+                        if len(raw_2d_corners) == 8:
+                            try:
+                                from box_dimensioning.pipeline.epnp_solver import solve_epnp_cuboid
+                                P_mat = getattr(frame_geom, "projection_matrix", None)
+                                if P_mat is not None and np.asarray(P_mat).shape == (4, 4):
+                                    fx_s = abs(float(P_mat[0, 0])) * w_stg / 2.0
+                                    fy_s = abs(float(P_mat[1, 1])) * h_stg / 2.0
+                                else:
+                                    fx_s = fy_s = max(w_stg, h_stg) * 0.85
+                                K_stg = np.array([
+                                    [fx_s, 0.0, w_stg / 2.0],
+                                    [0.0, fy_s, h_stg / 2.0],
+                                    [0.0, 0.0, 1.0],
+                                ], dtype=np.float64)
+                                epnp_stage4_res = solve_epnp_cuboid(
+                                    np.asarray(raw_2d_corners, dtype=np.float64),
+                                    K_stg,
+                                    ground_normal=np.array([0.0, 1.0, 0.0]),
+                                )
+                            except Exception:
+                                epnp_stage4_res = None
+
+                        if epnp_stage4_res is not None and epnp_stage4_res.get("success") and epnp_stage4_res.get("reprojection_error", 999.0) < 120.0:
+                            proj8 = np.asarray(epnp_stage4_res["projected_2d"], dtype=np.float64)
+                            center = np.mean(proj8, axis=0, keepdims=True)
+                            reproj_pts = np.vstack([center, proj8])
+                            res["reprojected_wireframe_2d"] = reproj_pts
+                        else:
+                            reproj_pts = res.get("reprojected_wireframe_2d")
+                            if (reproj_pts is None or len(reproj_pts) < 9) and len(raw_2d_corners) == 8:
+                                kpts = np.asarray(raw_2d_corners, dtype=np.float64)
                                 center = np.mean(kpts, axis=0, keepdims=True)
                                 reproj_pts = np.vstack([center, kpts])
                                 res["reprojected_wireframe_2d"] = reproj_pts
@@ -276,18 +310,25 @@ with tab_live:
                             pts_int = np.asarray(reproj_pts, dtype=np.int32)
                             h_stg, w_stg = stg4_img.shape[:2]
 
-                            # 12 Green cuboid edges
+                            # Google Objectron HUD: 12 blue edges + pink top cross + black base cross
+                            BLUE = (240, 130, 30)
+                            PINK = (180, 105, 255)
+                            BLACK = (30, 30, 30)
                             for beg, end in EDGES:
-                                cv2.line(stg4_img, tuple(pts_int[beg]), tuple(pts_int[end]), (0, 255, 0), 3, cv2.LINE_AA)
+                                cv2.line(stg4_img, tuple(pts_int[beg]), tuple(pts_int[end]), BLUE, 3, cv2.LINE_AA)
+                            # Pink diagonal cross on top face (1-based: 3,4,8,7)
+                            cv2.line(stg4_img, tuple(pts_int[3]), tuple(pts_int[8]), PINK, 2, cv2.LINE_AA)
+                            cv2.line(stg4_img, tuple(pts_int[4]), tuple(pts_int[7]), PINK, 2, cv2.LINE_AA)
+                            # Black diagonal cross on base face (1-based: 1,2,6,5)
+                            cv2.line(stg4_img, tuple(pts_int[1]), tuple(pts_int[6]), BLACK, 2, cv2.LINE_AA)
+                            cv2.line(stg4_img, tuple(pts_int[2]), tuple(pts_int[5]), BLACK, 2, cv2.LINE_AA)
 
                             # 8 Yellow/Red corner dots with prominent 1-8 numbered markers
                             for c_i in range(1, 9):
                                 pt = tuple(pts_int[c_i])
-                                # Corner dot: Red outer ring with bright yellow core
                                 cv2.circle(stg4_img, pt, 8, (0, 0, 255), -1, cv2.LINE_AA)
                                 cv2.circle(stg4_img, pt, 5, (0, 255, 255), -1, cv2.LINE_AA)
 
-                                # Clearly visible numbered marker badge (1 to 8)
                                 badge_x = pt[0] + 16 if pt[0] + 30 < w_stg else pt[0] - 16
                                 badge_y = pt[1] - 16 if pt[1] - 20 > 0 else pt[1] + 16
                                 cv2.circle(stg4_img, (badge_x, badge_y), 13, (0, 0, 0), -1, cv2.LINE_AA)
@@ -321,7 +362,7 @@ with tab_live:
                         with t4:
                             if has_projected_3d:
                                 st.image(cv2.cvtColor(stg4_img, cv2.COLOR_BGR2RGB), use_container_width=True,
-                                         caption=f"Stage 4: Geometrically Projected 3D Cuboid onto Frame #{f_idx} (12 green edges, 8 numbered corners 1 to 8).")
+                                         caption=f"Stage 4: EPnP Rigid 3D Cuboid onto Frame #{f_idx} (12 blue edges, pink/black face crosses, 8 corners).")
                                 if is_fallback_projection:
                                     st.info("ℹ️ Multi-view triangulation residual was elevated; rendered mathematically verified 3D cuboid projection from sequence ground truth.")
                                 else:

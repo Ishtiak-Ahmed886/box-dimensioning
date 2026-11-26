@@ -406,28 +406,27 @@ class CameraBoxTracker:
     ) -> np.ndarray:
         """
         Projects an isometric 3D cuboid onto 2D image coordinates within bounding box.
-        Returns array of shape (8, 2) corresponding to keypoints 1 to 8:
-        Top face (1, 2, 3, 4), Bottom face (5, 6, 7, 8).
+        Returns array of shape (8, 2) in Objectron/UNIT_CUBOID_8 vertex order:
+        0: bot-L-back, 1: bot-L-front, 2: top-L-back, 3: top-L-front,
+        4: bot-R-back, 5: bot-R-front, 6: top-R-back, 7: top-R-front.
         """
         x, y, w, h = bbox
-        # Typical 3D perspective projection of a cuboid resting on a surface seen from ~30° angle:
-        # Top face is tilted parallelogram, bottom face extends lower.
-        depth_offset_x = int(round(w * 0.16))
-        depth_offset_y = int(round(h * 0.18))
+        dx = int(round(w * 0.16))
+        dy = int(round(h * 0.18))
 
-        # Top face vertices (1 to 4)
-        c1 = [x + depth_offset_x, y]
-        c2 = [x + w, y]
-        c3 = [x + w - depth_offset_x, y + depth_offset_y]
-        c4 = [x, y + depth_offset_y]
+        bot_l_back  = [x + dx, y + h - dy]
+        bot_l_front = [x, y + h]
+        top_l_back  = [x + dx, y]
+        top_l_front = [x, y + dy]
+        bot_r_back  = [x + w, y + h - dy]
+        bot_r_front = [x + w - dx, y + h]
+        top_r_back  = [x + w, y]
+        top_r_front = [x + w - dx, y + dy]
 
-        # Bottom face vertices (5 to 8)
-        c5 = [c1[0], y + h - depth_offset_y]
-        c6 = [c2[0], y + h - depth_offset_y]
-        c7 = [c3[0], y + h]
-        c8 = [c4[0], y + h]
-
-        return np.array([c1, c2, c3, c4, c5, c6, c7, c8], dtype=np.float32)
+        return np.array([
+            bot_l_back, bot_l_front, top_l_back, top_l_front,
+            bot_r_back, bot_r_front, top_r_back, top_r_front,
+        ], dtype=np.float32)
 
     def _infer_8_corners_from_contour_and_bbox(
         self,
@@ -435,17 +434,23 @@ class CameraBoxTracker:
         bbox: Tuple[int, int, int, int],
         image: np.ndarray
     ) -> np.ndarray:
-        """Infers 8 corners using polygon vertices if 6-8 vertices exist, else fallback to standard cuboid."""
+        """Infers 8 corners in Objectron order using polygon vertices if 8 vertices exist."""
         pts = approx.reshape(-1, 2).astype(np.float32)
         if len(pts) == 8:
-            # Sort top 4 and bottom 4 by Y coordinate
             sorted_by_y = pts[np.argsort(pts[:, 1])]
             top_4 = sorted_by_y[:4]
             bot_4 = sorted_by_y[4:]
-            # Sort each by X coordinate
             top_4 = top_4[np.argsort(top_4[:, 0])]
             bot_4 = bot_4[np.argsort(bot_4[:, 0])]
-            return np.vstack([top_4, bot_4])
+            # Split left pair / right pair and order back (smaller y) before front (larger y)
+            tl = top_4[:2][np.argsort(top_4[:2, 1])]
+            tr = top_4[2:][np.argsort(top_4[2:, 1])]
+            bl = bot_4[:2][np.argsort(bot_4[:2, 1])]
+            br = bot_4[2:][np.argsort(bot_4[2:, 1])]
+            return np.array([
+                bl[0], bl[1], tl[0], tl[1],
+                br[0], br[1], tr[0], tr[1],
+            ], dtype=np.float32)
 
         return self._infer_8_corners_from_bbox(bbox, image)
 
@@ -488,6 +493,7 @@ class CameraBoxTracker:
         corners_3d = result['corners_3d']
         dims = result['dimensions_cm']
         vol_wt = result['volumetric_weight_kg']
+        self._last_projected_2d = result.get('projected_2d') if result.get('success') and result.get('reprojection_error', 999.0) < 60.0 else None
 
         return corners_3d, dims, vol_wt
 
@@ -570,17 +576,19 @@ class CameraBoxTracker:
             # Run EPnP on raw 2D corners first
             raw_corners_2d = self.current_corners_2d
             corners_3d, raw_dims, raw_vw = self.estimate_3d_and_dimensions(raw_corners_2d, (h, w))
+            # Prefer rigid EPnP reprojection when fit is tight so wireframe stays orthogonal
+            target_corners_2d = self._last_projected_2d if getattr(self, "_last_projected_2d", None) is not None else raw_corners_2d
 
             # Apply Kalman filter for temporal smoothing
             if self._kalman is not None:
                 self._kalman.predict()
                 smooth_corners, smooth_dims, accepted = self._kalman.update(
-                    raw_corners_2d, raw_dims
+                    target_corners_2d, raw_dims
                 )
                 active_corners_2d = smooth_corners
                 self.current_dimensions = smooth_dims
             else:
-                active_corners_2d = raw_corners_2d
+                active_corners_2d = target_corners_2d
                 self.current_dimensions = raw_dims
 
             self.current_corners_3d = corners_3d
@@ -591,6 +599,10 @@ class CameraBoxTracker:
             )
         else:
             active_corners_2d = None
+
+        # Ensure non-zero FPS even on the very first frame
+        if self.fps <= 0.0:
+            self.fps = 1.0 / max(1e-3, time.perf_counter() - t_start)
 
         # Draw visual overlays
         annotated = self.draw_overlay(frame, active_corners_2d, q_report)
@@ -635,63 +647,56 @@ class CameraBoxTracker:
                 PINK = (180, 105, 255)      # pink BGR
                 BLACK = (30, 30, 30)        # near-black BGR
 
-                # Cuboid 12 edges (blue)
+                # Cuboid 12 edges (blue) in Objectron/UNIT_CUBOID_8 vertex order:
+                # Bottom face: 0,1,5,4 | Top face: 2,3,7,6 | Vertical: (0,2),(1,3),(4,6),(5,7)
                 wire_edges = [
-                    (0, 4), (1, 5), (2, 6), (3, 7),  # vertical edges
-                    (0, 1), (1, 2), (2, 3), (3, 0),  # top face
-                    (4, 5), (5, 6), (6, 7), (7, 4),  # bottom face
+                    (0, 1), (1, 5), (5, 4), (4, 0),  # bottom face
+                    (2, 3), (3, 7), (7, 6), (6, 2),  # top face
+                    (0, 2), (1, 3), (4, 6), (5, 7),  # vertical edges
                 ]
                 for p_start, p_end in wire_edges:
                     cv2.line(img, tuple(pts[p_start]), tuple(pts[p_end]), BLUE, 2, cv2.LINE_AA)
 
-                # Pink diagonal cross (×) on front/top face (corners 0,1,2,3)
-                cv2.line(img, tuple(pts[0]), tuple(pts[2]), PINK, 2, cv2.LINE_AA)
-                cv2.line(img, tuple(pts[1]), tuple(pts[3]), PINK, 2, cv2.LINE_AA)
+                # Pink diagonal cross (×) on top face (corners 2,3,7,6)
+                cv2.line(img, tuple(pts[2]), tuple(pts[7]), PINK, 2, cv2.LINE_AA)
+                cv2.line(img, tuple(pts[3]), tuple(pts[6]), PINK, 2, cv2.LINE_AA)
 
-                # Black diagonal cross (×) on bottom/base face (corners 4,5,6,7)
-                cv2.line(img, tuple(pts[4]), tuple(pts[6]), BLACK, 2, cv2.LINE_AA)
-                cv2.line(img, tuple(pts[5]), tuple(pts[7]), BLACK, 2, cv2.LINE_AA)
+                # Black diagonal cross (×) on bottom/base face (corners 0,1,5,4)
+                cv2.line(img, tuple(pts[0]), tuple(pts[5]), BLACK, 2, cv2.LINE_AA)
+                cv2.line(img, tuple(pts[1]), tuple(pts[4]), BLACK, 2, cv2.LINE_AA)
 
                 # Draw Corner Markers 1 to 8
                 for idx in range(8):
                     pt = tuple(pts[idx])
-                    cv2.circle(img, pt, 7, (0, 0, 0), -1)
-                    cv2.circle(img, pt, 5, (0, 255, 255), -1)
+                    cv2.circle(img, pt, 6, (0, 0, 0), -1)
+                    cv2.circle(img, pt, 4, (0, 255, 255), -1)
                     label = f"C{idx + 1}"
                     cv2.putText(img, label, (pt[0] + 6, pt[1] - 4),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
 
-        # 2. Draw HUD Telemetry Card in Top-Left
-        card_w, card_h = min(420, w - 20), 160
+        # 2. Draw compact HUD Telemetry Card in Top-Left (avoids overlapping box)
+        card_w, card_h = min(310, w - 16), 96
         overlay = img.copy()
-        cv2.rectangle(overlay, (12, 12), (12 + card_w, 12 + card_h), (20, 20, 20), -1)
-        cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
+        cv2.rectangle(overlay, (8, 8), (8 + card_w, 8 + card_h), (20, 20, 20), -1)
+        cv2.addWeighted(overlay, 0.72, img, 0.28, 0, img)
 
         border_color = (0, 255, 0) if self.state == TrackingState.TRACKING else (0, 165, 255) if self.state == TrackingState.INITIALIZING else (0, 0, 255)
-        cv2.rectangle(img, (12, 12), (12 + card_w, 12 + card_h), border_color, 2)
+        cv2.rectangle(img, (8, 8), (8 + card_w, 8 + card_h), border_color, 1)
 
         font = cv2.FONT_HERSHEY_SIMPLEX
-        # Line 1: State & FPS
-        state_color = border_color
-        cv2.putText(img, f"STATUS: {self.state}", (24, 40), font, 0.65, state_color, 2)
-        cv2.putText(img, f"FPS: {self.fps:.1f}", (24 + card_w - 110, 40), font, 0.60, (220, 220, 220), 1)
+        cv2.putText(img, f"{self.state}", (16, 26), font, 0.48, border_color, 2)
+        cv2.putText(img, f"FPS: {self.fps:.1f}", (8 + card_w - 86, 26), font, 0.45, (220, 220, 220), 1)
 
-        # Line 2: Quality Gate Status
         q_color = (0, 255, 0) if quality_report.status == "ACCEPTED" else (0, 0, 255)
-        q_text = f"Quality: {quality_report.status} (Blur={quality_report.blur_score:.1f})"
-        cv2.putText(img, q_text, (24, 70), font, 0.50, q_color, 1)
+        cv2.putText(img, f"Quality: {quality_report.status} ({quality_report.blur_score:.0f})", (16, 46), font, 0.40, q_color, 1)
 
-        # Line 3: Dimensions
         l = self.current_dimensions.get("length", 0.0)
         width = self.current_dimensions.get("width", 0.0)
         height = self.current_dimensions.get("height", 0.0)
-        dim_str = f"Dims: L={l:.1f} x W={width:.1f} x H={height:.1f} cm"
-        cv2.putText(img, dim_str, (24, 105), font, 0.60, (255, 255, 255), 2)
+        cv2.putText(img, f"L={l:.1f} x W={width:.1f} x H={height:.1f} cm", (16, 68), font, 0.46, (255, 255, 255), 1)
 
-        # Line 4: Volumetric Weight
         vw = self.current_volumetric_weight
-        vw_str = f"Vol. Weight: {vw:.3f} kg (L*W*H/5000)"
-        cv2.putText(img, vw_str, (24, 138), font, 0.60, (0, 255, 255), 2)
+        cv2.putText(img, f"Vol. Wt: {vw:.3f} kg", (16, 90), font, 0.46, (0, 255, 255), 1)
 
         return img
 
