@@ -422,22 +422,52 @@ class MethodAMultiView:
 
         initial_gate = q_frame1 if q_frame1.status == "REJECTED" else q_frame2
 
-        # Step 4: Multi-view matching and triangulation
-        matched1, matched2 = self.match_features_and_corners(img1, img2, frame1, frame2, corners1, corners2)
-        triangulated_pts = self.triangulate_points(matched1, matched2, frame1, frame2)
-
         # Collect ground plane normal if present in AR metadata
         gp_normal = None
         if frame1.planes:
             gp_normal = frame1.planes[0].normal
 
-        # Also incorporate sparse AR feature points (parcel cluster)
-        sparse_pts = frame1.point_cloud if len(frame1.point_cloud) > 0 else None
+        # Step 4: Multi-View 2D-BBox -> 3D Rigid Cuboid Fitting (primary when >=4 views available)
+        fitted_box = None
+        fit_residual = 0.05
+        n_total = len(sequence.frames)
+        if n_total >= 4 and hasattr(self.detector, "detect"):
+            sample_idxs = sorted(set(
+                [idx1, idx2] + np.linspace(0, n_total - 1, min(8, n_total), dtype=int).tolist()
+            ))
+            mv_bboxes, mv_ps, mv_vs, mv_ws, mv_hs = [], [], [], [], []
+            for s_idx in sample_idxs:
+                s_img = images.get(s_idx) if (images and s_idx in images) else sequence.get_image(s_idx)
+                if s_img is None:
+                    continue
+                s_det = self.detector.detect(s_img)
+                bx, by, bw, bh = s_det.get("bounding_box", (0, 0, 0, 0))
+                if bw > 15 and bh > 15:
+                    s_fg = sequence.get_frame(s_idx)
+                    mv_bboxes.append((float(bx), float(by), float(bx + bw), float(by + bh)))
+                    mv_ps.append(s_fg.projection_matrix)
+                    mv_vs.append(s_fg.view_matrix)
+                    mv_ws.append(s_fg.image_width)
+                    mv_hs.append(s_fg.image_height)
 
-        # Step 5: Fit 3D cuboid
-        fitted_box, fit_residual = self.fit_cuboid(
-            triangulated_pts, ground_plane_normal=gp_normal, sparse_points=sparse_pts
-        )
+            if len(mv_bboxes) >= 4:
+                try:
+                    from box_dimensioning.pipeline.multiview_bbox_solver import solve_multiview_cuboid_from_bboxes
+                    fitted_box, mean_iou2d = solve_multiview_cuboid_from_bboxes(
+                        mv_bboxes, mv_ps, mv_vs, mv_ws, mv_hs, ground_normal=gp_normal
+                    )
+                    fit_residual = max(0.0, (1.0 - mean_iou2d) * 0.15)
+                except Exception:
+                    fitted_box = None
+
+        # Fallback to classical SIFT + DLT triangulation when < 4 multi-view YOLO bboxes
+        if fitted_box is None:
+            matched1, matched2 = self.match_features_and_corners(img1, img2, frame1, frame2, corners1, corners2)
+            triangulated_pts = self.triangulate_points(matched1, matched2, frame1, frame2)
+            sparse_pts = frame1.point_cloud if len(frame1.point_cloud) > 0 else None
+            fitted_box, fit_residual = self.fit_cuboid(
+                triangulated_pts, ground_plane_normal=gp_normal, sparse_points=sparse_pts
+            )
 
         # Final quality gate decision
         final_quality = self.quality_gate.validate_measurement(

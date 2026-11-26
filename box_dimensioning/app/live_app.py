@@ -262,46 +262,16 @@ with tab_live:
                                 cv2.circle(stg3_img, (cx, cy), 6, (0, 220, 255), -1, cv2.LINE_AA)
                                 cv2.putText(stg3_img, f"D{c_idx+1}", (cx + 10, cy - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 2, cv2.LINE_AA)
 
-                        # Stage 4: Reprojected 3D Cuboid Wireframe (EPnP Rigid Cuboid + Objectron HUD)
+                        # Stage 4: Reprojected 3D Cuboid Wireframe (Multi-View 3D Cuboid + Objectron HUD)
                         stg4_img = target_raw_frame.copy()
                         is_fallback_projection = False
-                        epnp_stage4_res = None
-
-                        if len(raw_2d_corners) == 8:
-                            try:
-                                from box_dimensioning.pipeline.epnp_solver import solve_epnp_cuboid
-                                P_mat = getattr(frame_geom, "projection_matrix", None)
-                                if P_mat is not None and np.asarray(P_mat).shape == (4, 4):
-                                    fx_s = abs(float(P_mat[0, 0])) * w_stg / 2.0
-                                    fy_s = abs(float(P_mat[1, 1])) * h_stg / 2.0
-                                else:
-                                    fx_s = fy_s = max(w_stg, h_stg) * 0.85
-                                K_stg = np.array([
-                                    [fx_s, 0.0, w_stg / 2.0],
-                                    [0.0, fy_s, h_stg / 2.0],
-                                    [0.0, 0.0, 1.0],
-                                ], dtype=np.float64)
-                                epnp_stage4_res = solve_epnp_cuboid(
-                                    np.asarray(raw_2d_corners, dtype=np.float64),
-                                    K_stg,
-                                    ground_normal=np.array([0.0, 1.0, 0.0]),
-                                )
-                            except Exception:
-                                epnp_stage4_res = None
-
-                        if epnp_stage4_res is not None and epnp_stage4_res.get("success") and epnp_stage4_res.get("reprojection_error", 999.0) < 120.0:
-                            proj8 = np.asarray(epnp_stage4_res["projected_2d"], dtype=np.float64)
-                            center = np.mean(proj8, axis=0, keepdims=True)
-                            reproj_pts = np.vstack([center, proj8])
+                        reproj_pts = res.get("reprojected_wireframe_2d")
+                        if (reproj_pts is None or len(reproj_pts) < 9) and len(raw_2d_corners) == 8:
+                            kpts = np.asarray(raw_2d_corners, dtype=np.float64)
+                            center = np.mean(kpts, axis=0, keepdims=True)
+                            reproj_pts = np.vstack([center, kpts])
                             res["reprojected_wireframe_2d"] = reproj_pts
-                        else:
-                            reproj_pts = res.get("reprojected_wireframe_2d")
-                            if (reproj_pts is None or len(reproj_pts) < 9) and len(raw_2d_corners) == 8:
-                                kpts = np.asarray(raw_2d_corners, dtype=np.float64)
-                                center = np.mean(kpts, axis=0, keepdims=True)
-                                reproj_pts = np.vstack([center, kpts])
-                                res["reprojected_wireframe_2d"] = reproj_pts
-                                is_fallback_projection = True
+                            is_fallback_projection = True
 
                         has_projected_3d = reproj_pts is not None and len(reproj_pts) >= 9
 
