@@ -68,7 +68,7 @@ method_choice = st.sidebar.radio(
 )
 method_code = "METHOD_A_MULTIVIEW" if "Multi-View" in method_choice else "METHOD_B_SINGLEVIEW"
 
-blur_thresh = st.sidebar.slider("Blur Threshold (Variance of Laplacian):", 20.0, 150.0, 60.0)
+blur_thresh = st.sidebar.slider("Blur Threshold (Variance of Laplacian):", 20.0, 150.0, 40.0)
 trunc_margin = st.sidebar.slider("Truncation Margin (px):", 0.0, 30.0, 8.0)
 min_baseline = st.sidebar.slider("Min Camera Baseline (cm):", 2.0, 20.0, 5.0) / 100.0
 

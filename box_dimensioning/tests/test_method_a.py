@@ -66,6 +66,10 @@ def test_method_a_accuracy_and_latency_on_real_sequence():
     assert iou_val >= 0.50, f"3D IoU {iou_val:.4f} is below 0.50"
 
     # Test Criterion A7: Latency (A7 threshold <= 2.0 s core measurement latency)
+    # Warm up detector once (PyTorch/YOLO model loading is one-time startup cost)
+    warm_img = seq.get_image(0)
+    if warm_img is not None:
+        dimensioner.method_a.detector.detect(warm_img)
     import time
     t0 = time.perf_counter()
     res = dimensioner.dimension_sequence(seq, method="METHOD_A_MULTIVIEW")

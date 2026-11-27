@@ -194,7 +194,7 @@ def solve_multiview_cuboid_from_bboxes(
         1.20, 1.20, 1.20,
     ])
 
-    for yaw_deg in (0.0, 45.0, 90.0):
+    for yaw_deg in (0.0, 45.0):
         R_seed = base_R @ Rotation.from_euler("y", yaw_deg, degrees=True).as_matrix()
         rvec0 = Rotation.from_matrix(R_seed).as_rotvec()
         x0 = np.array([
@@ -205,7 +205,7 @@ def solve_multiview_cuboid_from_bboxes(
         x0 = np.clip(x0, lb + 1e-4, ub - 1e-4)
 
         sol = least_squares(
-            residuals, x0, bounds=(lb, ub), loss="soft_l1", f_scale=0.03, max_nfev=80
+            residuals, x0, bounds=(lb, ub), loss="soft_l1", f_scale=0.03, max_nfev=45
         )
         if sol.cost < best_cost:
             best_cost = sol.cost

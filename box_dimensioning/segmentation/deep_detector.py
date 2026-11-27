@@ -159,10 +159,12 @@ class DeepBoxDetector:
                 if results[0].keypoints is not None and len(results[0].keypoints.xy) > best_idx:
                     kpts = results[0].keypoints.xy[best_idx].cpu().numpy()
                     if len(kpts) == 8:
-                        corners_8 = kpts.astype(np.float32)
+                        corners_8 = self._refine_corners_in_roi(
+                            image, (x1, y1, x2, y2), kpts.astype(np.float32)
+                        )
 
                 if corners_8 is None:
-                    corners_8 = self._bbox_to_corners(x1, y1, x2, y2)
+                    corners_8 = self._extract_roi_corners(image, (x1, y1, x2, y2))
 
                 return {
                     "corners_2d": corners_8,
@@ -515,6 +517,53 @@ class DeepBoxDetector:
         x = x1 + t * (x2 - x1)
         y = y1 + t * (y2 - y1)
         return x, y
+
+    @staticmethod
+    def _extract_roi_corners(image: np.ndarray, xyxy: Tuple[int, int, int, int]) -> np.ndarray:
+        """Extracts up to 8 salient 2D corners strictly inside the YOLO bounding box ROI."""
+        h_img, w_img = image.shape[:2]
+        x1, y1, x2, y2 = [int(v) for v in xyxy]
+        x1 = max(0, min(x1, w_img - 2))
+        y1 = max(0, min(y1, h_img - 2))
+        x2 = max(x1 + 2, min(x2, w_img))
+        y2 = max(y1 + 2, min(y2, h_img))
+        bw, bh = x2 - x1, y2 - y1
+
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+        roi = gray[y1:y2, x1:x2]
+        min_dist = max(8.0, min(bw, bh) * 0.18)
+        pts = cv2.goodFeaturesToTrack(roi, maxCorners=8, qualityLevel=0.04, minDistance=min_dist)
+        if pts is not None and len(pts) >= 4:
+            corners = pts.reshape(-1, 2).astype(np.float32)
+            corners[:, 0] += x1
+            corners[:, 1] += y1
+            return corners
+        return DeepBoxDetector._bbox_to_corners(x1, y1, x2, y2)
+
+    @classmethod
+    def _refine_corners_in_roi(
+        cls,
+        image: np.ndarray,
+        xyxy: Tuple[int, int, int, int],
+        kpts: np.ndarray,
+    ) -> np.ndarray:
+        """Keeps 2D keypoints strictly on the parcel; replaces wildly drifted ones with ROI corners."""
+        x1, y1, x2, y2 = [float(v) for v in xyxy]
+        bw, bh = max(1.0, x2 - x1), max(1.0, y2 - y1)
+        tol_x, tol_y = bw * 0.08, bh * 0.08
+
+        out_of_box = (
+            (kpts[:, 0] < x1 - tol_x) | (kpts[:, 0] > x2 + tol_x) |
+            (kpts[:, 1] < y1 - tol_y) | (kpts[:, 1] > y2 + tol_y)
+        )
+        if int(np.sum(out_of_box)) >= 2:
+            # 256px pose keypoints drifted outside the box — use clean ROI corners instead
+            return cls._extract_roi_corners(image, (int(x1), int(y1), int(x2), int(y2)))
+
+        refined = kpts.copy()
+        refined[:, 0] = np.clip(refined[:, 0], x1, x2)
+        refined[:, 1] = np.clip(refined[:, 1], y1, y2)
+        return refined
 
     @staticmethod
     def _bbox_to_corners(x1: int, y1: int, x2: int, y2: int) -> np.ndarray:

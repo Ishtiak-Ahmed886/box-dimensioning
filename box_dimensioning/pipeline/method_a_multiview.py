@@ -11,6 +11,7 @@ Meets acceptance criteria:
 
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional, Any
+import os
 import time
 import cv2
 import numpy as np
@@ -432,15 +433,54 @@ class MethodAMultiView:
         fit_residual = 0.05
         n_total = len(sequence.frames)
         if n_total >= 4 and hasattr(self.detector, "detect"):
-            sample_idxs = sorted(set(
-                [idx1, idx2] + np.linspace(0, n_total - 1, min(8, n_total), dtype=int).tolist()
-            ))
+            cached_dets: Dict[int, Dict] = {}
+            if img1 is not None and "res_c1" in locals():
+                cached_dets[idx1] = res_c1
+            if img2 is not None and "res_c2" in locals():
+                cached_dets[idx2] = res_c2
+
+            if images:
+                avail_keys = sorted(images.keys())
+                pick = np.linspace(0, len(avail_keys) - 1, min(5, len(avail_keys)), dtype=int)
+                sample_idxs = sorted(set([idx1, idx2] + [avail_keys[p] for p in pick]))
+                sampled_imgs = {k: images[k] for k in sample_idxs if k in images}
+            else:
+                sample_idxs = sorted(set(
+                    [idx1, idx2] + np.linspace(0, n_total - 1, min(5, n_total), dtype=int).tolist()
+                ))
+                sampled_imgs: Dict[int, np.ndarray] = {idx1: img1, idx2: img2}
+                missing = [i for i in sample_idxs if i not in sampled_imgs or sampled_imgs[i] is None]
+                seq_dir = getattr(sequence, "sequence_dir", None)
+                vid_path = os.path.join(seq_dir, "video.MOV") if seq_dir else None
+                if missing and vid_path and os.path.isfile(vid_path):
+                    try:
+                        cap = cv2.VideoCapture(vid_path)
+                        if cap.isOpened():
+                            max_target = max(missing)
+                            missing_set = set(missing)
+                            cur_f = 0
+                            while cur_f <= max_target:
+                                if not cap.grab():
+                                    break
+                                if cur_f in missing_set:
+                                    ret, f_img = cap.retrieve()
+                                    if ret and f_img is not None:
+                                        sampled_imgs[cur_f] = f_img
+                                cur_f += 1
+                            cap.release()
+                    except Exception:
+                        pass
+
             mv_bboxes, mv_ps, mv_vs, mv_ws, mv_hs = [], [], [], [], []
             for s_idx in sample_idxs:
-                s_img = images.get(s_idx) if (images and s_idx in images) else sequence.get_image(s_idx)
-                if s_img is None:
-                    continue
-                s_det = self.detector.detect(s_img)
+                s_det = cached_dets.get(s_idx)
+                if s_det is None:
+                    s_img = sampled_imgs.get(s_idx)
+                    if s_img is None:
+                        s_img = sequence.get_image(s_idx)
+                    if s_img is None:
+                        continue
+                    s_det = self.detector.detect(s_img)
                 bx, by, bw, bh = s_det.get("bounding_box", (0, 0, 0, 0))
                 if bw > 15 and bh > 15:
                     s_fg = sequence.get_frame(s_idx)
@@ -469,6 +509,18 @@ class MethodAMultiView:
                 triangulated_pts, ground_plane_normal=gp_normal, sparse_points=sparse_pts
             )
 
+        # Reproject to primary frame before final quality gate so truncation uses fitted 3D corners
+        reproj_wireframe = fitted_box.project_to_image(
+            projection_matrix=frame1.projection_matrix,
+            view_matrix=frame1.view_matrix,
+            width=frame1.image_width,
+            height=frame1.image_height
+        )
+        if initial_gate.reason_code == "BOX_TRUNCATED" and reproj_wireframe is not None and len(reproj_wireframe) >= 9:
+            initial_gate = self.quality_gate.validate_frame(
+                img1, reproj_wireframe[1:], frame1.image_width, frame1.image_height
+            )
+
         # Final quality gate decision
         final_quality = self.quality_gate.validate_measurement(
             initial_gate, baseline_meters=baseline_m, fit_residual=fit_residual
@@ -476,14 +528,6 @@ class MethodAMultiView:
 
         lat_sec = float(time.perf_counter() - t_start)
         l, w, h = fitted_box.dimensions_cm
-
-        # Reproject to primary frame
-        reproj_wireframe = fitted_box.project_to_image(
-            projection_matrix=frame1.projection_matrix,
-            view_matrix=frame1.view_matrix,
-            width=frame1.image_width,
-            height=frame1.image_height
-        )
 
         return MeasurementResult(
             status=final_quality.status,
