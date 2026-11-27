@@ -49,35 +49,84 @@ class MethodAMultiView:
         target_baseline_meters: float = 0.15, # 15 cm target baseline for stable triangulation
         quality_gate: Optional[QualityGate] = None,
         detector: Optional[Any] = None,
+        num_views: int = 8,
     ):
         self.min_baseline_meters = min_baseline_meters
         self.target_baseline_meters = target_baseline_meters
         self.quality_gate = quality_gate or QualityGate(min_baseline_meters=min_baseline_meters)
         self.detector = detector or DeepBoxDetector()
         self.segmenter = self.detector  # polymorphic alias for detector
+        self.num_views = max(2, int(num_views))
+
+    @staticmethod
+    def _load_frames_single_pass(
+        sequence: ObjectronSequence,
+        indices: List[int],
+        images: Optional[Dict[int, np.ndarray]] = None,
+    ) -> Dict[int, np.ndarray]:
+        """Loads requested frame indices in a single VideoCapture pass (or from images dict)."""
+        out: Dict[int, np.ndarray] = {}
+        if images:
+            for idx in indices:
+                if idx in images and images[idx] is not None:
+                    out[idx] = images[idx]
+            return out
+
+        seq_dir = getattr(sequence, "sequence_dir", None)
+        vid_path = os.path.join(seq_dir, "video.MOV") if seq_dir else None
+        if vid_path and os.path.isfile(vid_path) and indices:
+            try:
+                cap = cv2.VideoCapture(vid_path)
+                if cap.isOpened():
+                    target_set = set(indices)
+                    max_target = max(indices)
+                    cur_f = 0
+                    while cur_f <= max_target:
+                        if not cap.grab():
+                            break
+                        if cur_f in target_set:
+                            ret, f_img = cap.retrieve()
+                            if ret and f_img is not None:
+                                out[cur_f] = f_img
+                        cur_f += 1
+                    cap.release()
+            except Exception:
+                pass
+        return out
 
     def select_keyframe_pair(
         self,
         sequence: ObjectronSequence,
-        images: Optional[List[np.ndarray]] = None
+        images: Optional[Dict[int, np.ndarray]] = None,
+        preloaded: Optional[Dict[int, np.ndarray]] = None,
     ) -> Tuple[int, int, float]:
-        """Selects two candidate frames with optimal baseline and low blur.
+        """Selects two candidate frames with optimal baseline and high sharpness.
         Returns: (idx1, idx2, baseline_distance_meters).
         """
         n_frames = len(sequence.frames)
         if n_frames < 2:
             raise ValueError("Sequence requires at least 2 frames for multi-view measurement")
 
-        # Compute camera positions in world space
         positions = [f.transform[:3, 3] for f in sequence.frames]
+        step = max(1, n_frames // 12)
+        candidates = list(range(0, n_frames, step))
+        if (n_frames - 1) not in candidates:
+            candidates.append(n_frames - 1)
+
+        # Evaluate sharpness on candidate frames (single pass)
+        frame_imgs = preloaded if preloaded is not None else self._load_frames_single_pass(
+            sequence, candidates, images if isinstance(images, dict) else None
+        )
+        sharpness: Dict[int, float] = {}
+        for idx in candidates:
+            img = frame_imgs.get(idx)
+            if img is not None:
+                sharpness[idx] = self.quality_gate.compute_blur_score(img)
 
         best_i, best_j = 0, min(15, n_frames - 1)
         best_score = -1.0
         best_dist = 0.0
-
-        # Sample frame pairs with stride
-        step = max(1, n_frames // 40)
-        candidates = list(range(0, n_frames, step))
+        thresh = self.quality_gate.blur_threshold
 
         for i in range(len(candidates)):
             idx1 = candidates[i]
@@ -90,15 +139,21 @@ class MethodAMultiView:
                 if dist < self.min_baseline_meters:
                     continue
 
-                # Score pair based on proximity to target baseline and frame separation
-                score = 1.0 / (abs(dist - self.target_baseline_meters) + 0.02)
+                base_score = 1.0 / (abs(dist - self.target_baseline_meters) + 0.02)
+                if idx1 in sharpness and idx2 in sharpness:
+                    min_s = min(sharpness[idx1], sharpness[idx2])
+                    # Strongly prefer pairs where both frames pass blur threshold
+                    sharp_bonus = 2.0 + min(min_s, 150.0) / 100.0 if min_s >= thresh else (min_s / max(thresh, 1.0)) * 0.25
+                    score = base_score * sharp_bonus
+                else:
+                    score = base_score
+
                 if score > best_score:
                     best_score = score
                     best_i, best_j = idx1, idx2
                     best_dist = dist
 
         if best_dist < self.min_baseline_meters:
-            # Fallback to furthest pair
             max_d = 0.0
             for i in range(n_frames):
                 for j in range(i + 1, n_frames):
@@ -393,33 +448,43 @@ class MethodAMultiView:
         """Executes Method A multi-view dimensioning on an Objectron video sequence."""
         t_start = time.perf_counter()
 
-        # Step 1: Keyframe selection
-        img_list = [images.get(i) for i in range(len(sequence.frames))] if images else None
-        idx1, idx2, baseline_m = self.select_keyframe_pair(sequence, img_list)
+        # Step 1: Preload candidate frames once & select sharp keyframe pair
+        n_total = len(sequence.frames)
+        step = max(1, n_total // 12)
+        cand_idxs = list(range(0, n_total, step))
+        if n_total > 0 and (n_total - 1) not in cand_idxs:
+            cand_idxs.append(n_total - 1)
+        preloaded = self._load_frames_single_pass(sequence, cand_idxs, images)
+
+        idx1, idx2, baseline_m = self.select_keyframe_pair(sequence, images, preloaded=preloaded)
         frame1 = sequence.get_frame(idx1)
         frame2 = sequence.get_frame(idx2)
 
-        img1 = images.get(idx1) if (images and idx1 in images) else sequence.get_image(idx1)
-        img2 = images.get(idx2) if (images and idx2 in images) else sequence.get_image(idx2)
+        img1 = preloaded.get(idx1) if idx1 in preloaded else (images.get(idx1) if (images and idx1 in images) else sequence.get_image(idx1))
+        img2 = preloaded.get(idx2) if idx2 in preloaded else (images.get(idx2) if (images and idx2 in images) else sequence.get_image(idx2))
 
         # Step 2: 2D corner localization on keyframes using deep 8-corner detector
         corners1 = np.empty((0, 2))
         corners2 = np.empty((0, 2))
+        roi1 = None
+        roi2 = None
         if img1 is not None:
             res_c1 = self.detector.detect(img1) if hasattr(self.detector, 'detect') else self.detector.detect_corners(img1)
             corners1 = res_c1.get("corners_8_2d") if res_c1.get("corners_8_2d") is not None else res_c1.get("corners_2d", np.empty((0, 2)))
+            roi1 = res_c1.get("bounding_box") or res_c1.get("bounding_rect")
         if len(corners1) < 4:
             corners1 = sequence.get_corners_2d(idx1, self.detector)
 
         if img2 is not None:
             res_c2 = self.detector.detect(img2) if hasattr(self.detector, 'detect') else self.detector.detect_corners(img2)
             corners2 = res_c2.get("corners_8_2d") if res_c2.get("corners_8_2d") is not None else res_c2.get("corners_2d", np.empty((0, 2)))
+            roi2 = res_c2.get("bounding_box") or res_c2.get("bounding_rect")
         if len(corners2) < 4:
             corners2 = sequence.get_corners_2d(idx2, self.detector)
 
-        # Step 3: Quality gate validation of frame pair
-        q_frame1 = self.quality_gate.validate_frame(img1, corners1, frame1.image_width, frame1.image_height)
-        q_frame2 = self.quality_gate.validate_frame(img2, corners2, frame2.image_width, frame2.image_height)
+        # Step 3: Quality gate validation of frame pair (blur checked on object ROI)
+        q_frame1 = self.quality_gate.validate_frame(img1, corners1, frame1.image_width, frame1.image_height, roi_bbox=roi1)
+        q_frame2 = self.quality_gate.validate_frame(img2, corners2, frame2.image_width, frame2.image_height, roi_bbox=roi2)
 
         initial_gate = q_frame1 if q_frame1.status == "REJECTED" else q_frame2
 
@@ -433,55 +498,53 @@ class MethodAMultiView:
         fit_residual = 0.05
         n_total = len(sequence.frames)
         if n_total >= 4 and hasattr(self.detector, "detect"):
-            cached_dets: Dict[int, Dict] = {}
-            if img1 is not None and "res_c1" in locals():
-                cached_dets[idx1] = res_c1
-            if img2 is not None and "res_c2" in locals():
-                cached_dets[idx2] = res_c2
-
             if images:
                 avail_keys = sorted(images.keys())
-                pick = np.linspace(0, len(avail_keys) - 1, min(5, len(avail_keys)), dtype=int)
+                pick = np.linspace(0, len(avail_keys) - 1, min(self.num_views, len(avail_keys)), dtype=int)
                 sample_idxs = sorted(set([idx1, idx2] + [avail_keys[p] for p in pick]))
                 sampled_imgs = {k: images[k] for k in sample_idxs if k in images}
             else:
                 sample_idxs = sorted(set(
-                    [idx1, idx2] + np.linspace(0, n_total - 1, min(5, n_total), dtype=int).tolist()
+                    [idx1, idx2] + np.linspace(0, n_total - 1, min(self.num_views, n_total), dtype=int).tolist()
                 ))
-                sampled_imgs: Dict[int, np.ndarray] = {idx1: img1, idx2: img2}
+                sampled_imgs = dict(preloaded)
+                if img1 is not None:
+                    sampled_imgs[idx1] = img1
+                if img2 is not None:
+                    sampled_imgs[idx2] = img2
                 missing = [i for i in sample_idxs if i not in sampled_imgs or sampled_imgs[i] is None]
-                seq_dir = getattr(sequence, "sequence_dir", None)
-                vid_path = os.path.join(seq_dir, "video.MOV") if seq_dir else None
-                if missing and vid_path and os.path.isfile(vid_path):
-                    try:
-                        cap = cv2.VideoCapture(vid_path)
-                        if cap.isOpened():
-                            max_target = max(missing)
-                            missing_set = set(missing)
-                            cur_f = 0
-                            while cur_f <= max_target:
-                                if not cap.grab():
-                                    break
-                                if cur_f in missing_set:
-                                    ret, f_img = cap.retrieve()
-                                    if ret and f_img is not None:
-                                        sampled_imgs[cur_f] = f_img
-                                cur_f += 1
-                            cap.release()
-                    except Exception:
-                        pass
+                if missing:
+                    sampled_imgs.update(self._load_frames_single_pass(sequence, missing))
+
+            # Collect frames needing batched bbox detection (reuse idx1/idx2 detections)
+            batch_idxs, batch_imgs = [], []
+            cached_bboxes: Dict[int, Tuple[int, int, int, int]] = {}
+            if "res_c1" in locals():
+                cached_bboxes[idx1] = res_c1.get("bounding_box", (0, 0, 0, 0))
+            if "res_c2" in locals():
+                cached_bboxes[idx2] = res_c2.get("bounding_box", (0, 0, 0, 0))
+
+            for s_idx in sample_idxs:
+                if s_idx in cached_bboxes:
+                    continue
+                s_img = sampled_imgs.get(s_idx)
+                if s_img is None:
+                    s_img = sequence.get_image(s_idx)
+                if s_img is not None:
+                    batch_idxs.append(s_idx)
+                    batch_imgs.append(s_img)
+
+            if batch_imgs:
+                if hasattr(self.detector, "detect_bboxes_batch"):
+                    batch_boxes = self.detector.detect_bboxes_batch(batch_imgs)
+                else:
+                    batch_boxes = [self.detector.detect(im).get("bounding_box", (0, 0, 0, 0)) for im in batch_imgs]
+                for b_idx, b_box in zip(batch_idxs, batch_boxes):
+                    cached_bboxes[b_idx] = b_box
 
             mv_bboxes, mv_ps, mv_vs, mv_ws, mv_hs = [], [], [], [], []
             for s_idx in sample_idxs:
-                s_det = cached_dets.get(s_idx)
-                if s_det is None:
-                    s_img = sampled_imgs.get(s_idx)
-                    if s_img is None:
-                        s_img = sequence.get_image(s_idx)
-                    if s_img is None:
-                        continue
-                    s_det = self.detector.detect(s_img)
-                bx, by, bw, bh = s_det.get("bounding_box", (0, 0, 0, 0))
+                bx, by, bw, bh = cached_bboxes.get(s_idx, (0, 0, 0, 0))
                 if bw > 15 and bh > 15:
                     s_fg = sequence.get_frame(s_idx)
                     mv_bboxes.append((float(bx), float(by), float(bx + bw), float(by + bh)))

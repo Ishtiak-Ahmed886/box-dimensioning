@@ -3,6 +3,7 @@ Executes Method A or Method B, performs quality gating, renders reprojected 3D w
 and outputs standardized JSON specification for volumetric-weight courier billing.
 """
 
+from enum import Enum
 from typing import Dict, Optional, Tuple
 import os
 import json
@@ -14,6 +15,34 @@ from box_dimensioning.dataset.objectron_parser import ObjectronSequence
 from box_dimensioning.calibration.intrinsics_checker import draw_projected_box_wireframe
 from box_dimensioning.pipeline.method_a_multiview import MethodAMultiView, MeasurementResult
 from box_dimensioning.pipeline.method_b_singleview import MethodBSingleView
+
+
+class DimensioningMethod(str, Enum):
+    """Canonical dimensioning pipeline identifiers."""
+    METHOD_A = "METHOD_A_MULTIVIEW"
+    METHOD_B = "METHOD_B_SINGLEVIEW"
+
+
+_METHOD_ALIASES: Dict[str, DimensioningMethod] = {
+    "A": DimensioningMethod.METHOD_A,
+    "METHOD_A": DimensioningMethod.METHOD_A,
+    "METHOD_A_MULTIVIEW": DimensioningMethod.METHOD_A,
+    "B": DimensioningMethod.METHOD_B,
+    "METHOD_B": DimensioningMethod.METHOD_B,
+    "METHOD_B_SINGLEVIEW": DimensioningMethod.METHOD_B,
+}
+
+
+def normalize_method(method: str) -> DimensioningMethod:
+    """Normalizes user-supplied method string to a canonical DimensioningMethod."""
+    if not isinstance(method, str):
+        raise ValueError(f"Method must be a string, got {type(method).__name__}")
+    key = method.strip().upper()
+    if key not in _METHOD_ALIASES:
+        raise ValueError(
+            f"Unknown dimensioning method '{method}'. Expected one of: A, B, METHOD_A_MULTIVIEW, METHOD_B_SINGLEVIEW."
+        )
+    return _METHOD_ALIASES[key]
 
 
 def render_wireframe_with_overlay(
@@ -100,7 +129,8 @@ class BoxDimensioner:
         """Runs dimensioning measurement on an Objectron video sequence.
         Produces complete output JSON payload and wireframe image (F6).
         """
-        if method == "METHOD_B_SINGLEVIEW":
+        canonical_method = normalize_method(method)
+        if canonical_method == DimensioningMethod.METHOD_B:
             res: MeasurementResult = self.method_b.measure(sequence, images)
         else:
             res: MeasurementResult = self.method_a.measure(sequence, images)

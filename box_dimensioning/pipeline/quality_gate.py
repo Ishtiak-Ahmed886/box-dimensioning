@@ -49,29 +49,45 @@ class QualityReport:
     details: Optional[Dict] = None
 
 
+DEFAULT_BLUR_THRESHOLD: float = 40.0
+DEFAULT_TRUNCATION_MARGIN_PX: float = 8.0
+DEFAULT_MIN_BASELINE_METERS: float = 0.04
+DEFAULT_MAX_FIT_RESIDUAL: float = 0.05
+
+
 class QualityGate:
     """Configurable quality gate for frame validation and measurement confidence."""
 
     def __init__(
         self,
-        blur_threshold: float = 60.0,
-        truncation_margin_px: float = 8.0,
-        min_baseline_meters: float = 0.04,  # 4 cm baseline minimum for stereo/multi-view
-        max_fit_residual: float = 0.05       # 5 cm max mean residual for cuboid fit
+        blur_threshold: float = DEFAULT_BLUR_THRESHOLD,
+        truncation_margin_px: float = DEFAULT_TRUNCATION_MARGIN_PX,
+        min_baseline_meters: float = DEFAULT_MIN_BASELINE_METERS,  # 4 cm baseline minimum for stereo/multi-view
+        max_fit_residual: float = DEFAULT_MAX_FIT_RESIDUAL         # 5 cm max mean residual for cuboid fit
     ):
         self.blur_threshold = blur_threshold
         self.truncation_margin_px = truncation_margin_px
         self.min_baseline_meters = min_baseline_meters
         self.max_fit_residual = max_fit_residual
 
-    def compute_blur_score(self, image: np.ndarray) -> float:
-        """Computes blur metric via variance of Laplacian."""
+    def compute_blur_score(
+        self,
+        image: np.ndarray,
+        roi_bbox: Optional[Tuple[int, int, int, int]] = None,
+    ) -> float:
+        """Computes blur metric via variance of Laplacian on object ROI (or full image if no ROI)."""
         if image is None or image.size == 0:
             return 0.0
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+        if roi_bbox is not None:
+            h_img, w_img = gray.shape[:2]
+            rx, ry, rw, rh = [int(round(v)) for v in roi_bbox]
+            x1 = max(0, rx)
+            y1 = max(0, ry)
+            x2 = min(w_img, rx + rw)
+            y2 = min(h_img, ry + rh)
+            if (x2 - x1) >= 16 and (y2 - y1) >= 16:
+                gray = gray[y1:y2, x1:x2]
         laplacian = cv2.Laplacian(gray, cv2.CV_64F)
         return float(laplacian.var())
 
@@ -123,10 +139,19 @@ class QualityGate:
         image: Optional[np.ndarray],
         detected_corners_2d: Optional[np.ndarray],
         image_width: int,
-        image_height: int
+        image_height: int,
+        roi_bbox: Optional[Tuple[int, int, int, int]] = None,
     ) -> QualityReport:
-        """Validates a single candidate frame for image blur and parcel truncation."""
-        blur_score = self.compute_blur_score(image) if image is not None else 100.0
+        """Validates a single candidate frame for image blur (on object ROI) and parcel truncation."""
+        effective_roi = roi_bbox
+        if effective_roi is None and detected_corners_2d is not None and len(detected_corners_2d) >= 2:
+            pts = np.asarray(detected_corners_2d, dtype=np.float64).reshape(-1, 2)
+            x1, y1 = int(np.floor(np.min(pts[:, 0]))), int(np.floor(np.min(pts[:, 1])))
+            x2, y2 = int(np.ceil(np.max(pts[:, 0]))), int(np.ceil(np.max(pts[:, 1])))
+            if (x2 - x1) >= 16 and (y2 - y1) >= 16:
+                effective_roi = (x1, y1, x2 - x1, y2 - y1)
+
+        blur_score = self.compute_blur_score(image, roi_bbox=effective_roi) if image is not None else 100.0
         is_blurry = blur_score < self.blur_threshold
 
         is_truncated = False

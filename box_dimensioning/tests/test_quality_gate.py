@@ -27,6 +27,29 @@ def test_quality_gate_blur_rejection():
     assert rep_blur.is_blurry is True
 
 
+def test_quality_gate_roi_blur_vs_gaussian_blur():
+    """Sharp object ROI with uniform wall/table background passes; Gaussian-blurred fails."""
+    import cv2
+    gate = QualityGate(blur_threshold=40.0)
+
+    # Mostly uniform background (400x400) with a sharp 120x120 textured box in the center
+    img = np.full((400, 400, 3), 210, dtype=np.uint8)
+    roi = (140, 140, 120, 120)
+    img[140:260:12, 140:260] = 30
+    img[140:260, 140:260:12] = 30
+
+    rep_sharp = gate.validate_frame(img, None, 400, 400, roi_bbox=roi)
+    assert rep_sharp.status == "ACCEPTED"
+    assert rep_sharp.is_blurry is False
+
+    # Heavy Gaussian blur on the same image should be rejected
+    blurred = cv2.GaussianBlur(img, (21, 21), 7.0)
+    rep_blurred = gate.validate_frame(blurred, None, 400, 400, roi_bbox=roi)
+    assert rep_blurred.status == "REJECTED"
+    assert rep_blurred.reason_code == QualityReason.FRAME_TOO_BLURRY
+    assert rep_blurred.is_blurry is True
+
+
 def test_quality_gate_baseline_rejection():
     """Verify rejection when camera translation baseline is below threshold."""
     gate = QualityGate(min_baseline_meters=0.05)

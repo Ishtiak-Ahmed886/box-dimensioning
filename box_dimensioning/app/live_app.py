@@ -175,6 +175,11 @@ with tab_live:
                 f"Please choose a sequence with available video (e.g. cereal_box/batch-5/28 or cereal_box/batch-26/22)."
             )
 
+        @st.cache_resource
+        def _get_cached_detector():
+            from box_dimensioning.segmentation.deep_detector import DeepBoxDetector
+            return DeepBoxDetector()
+
         if st.button("🚀 Measure Package Live", type="primary", key="btn_measure_dataset"):
             if not os.path.isdir(active_seq_dir):
                 st.error(f"Sequence directory not found: {active_seq_dir}")
@@ -182,6 +187,11 @@ with tab_live:
                 with st.spinner("Processing video frames and computing 3D cuboid fit..."):
                     seq = load_sequence(active_seq_dir, selected_seq_id)
                     dimensioner = BoxDimensioner()
+                    cached_det = _get_cached_detector()
+                    dimensioner.method_a.detector = cached_det
+                    dimensioner.method_a.segmenter = cached_det
+                    dimensioner.method_b.detector = cached_det
+                    dimensioner.method_b.segmenter = cached_det
                     dimensioner.method_a.quality_gate.blur_threshold = blur_thresh
                     dimensioner.method_a.quality_gate.truncation_margin_px = trunc_margin
                     dimensioner.method_a.quality_gate.min_baseline_meters = min_baseline

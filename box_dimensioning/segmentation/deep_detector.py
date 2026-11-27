@@ -9,7 +9,7 @@ Returns 8 projected corner points (2D) + confidence score per detection.
 """
 
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
@@ -98,6 +98,10 @@ def _yolo_postprocess(
     return detections
 
 
+# Module-level singleton cache so 31.6 MB YOLO weights are loaded once per process
+_SHARED_YOLO_CACHE: Dict[str, Any] = {}
+
+
 class DeepBoxDetector:
     """Deep learning box/parcel detector with classical fallback.
 
@@ -122,13 +126,16 @@ class DeepBoxDetector:
         self._ultralytics_yolo_tried = False
 
     def _load_custom_pose(self) -> bool:
-        """Loads custom fine-tuned YOLO 8-corner keypoint model if available."""
+        """Loads custom fine-tuned YOLO 8-corner keypoint model if available (process-cached)."""
         if self._custom_pose is not None:
+            return True
+        custom_weights = os.path.join("models", "custom_box_corner_pose.pt")
+        if custom_weights in _SHARED_YOLO_CACHE:
+            self._custom_pose = _SHARED_YOLO_CACHE[custom_weights]
             return True
         if self._custom_pose_tried:
             return False
         self._custom_pose_tried = True
-        custom_weights = os.path.join("models", "custom_box_corner_pose.pt")
         if os.path.isfile(custom_weights):
             try:
                 cfg_dir = os.path.abspath(".ultralytics")
@@ -136,12 +143,35 @@ class DeepBoxDetector:
                 os.environ["YOLO_CONFIG_DIR"] = cfg_dir
 
                 from ultralytics import YOLO
-                self._custom_pose = YOLO(custom_weights)
+                model = YOLO(custom_weights)
+                _SHARED_YOLO_CACHE[custom_weights] = model
+                self._custom_pose = model
                 print(f"[DeepBoxDetector] Loaded custom 8-corner pose YOLO detector from {custom_weights}")
                 return True
             except Exception as e:
                 print(f"[DeepBoxDetector] Failed to load custom pose weights: {e}")
         return False
+
+    def detect_bboxes_batch(self, images: List[np.ndarray]) -> List[Tuple[int, int, int, int]]:
+        """Runs batched 2D bounding box detection across multiple frames in one YOLO pass."""
+        if not images:
+            return []
+        if self.use_deep and self._load_custom_pose() and self._custom_pose is not None:
+            try:
+                results = self._custom_pose(images, conf=self.conf_threshold, verbose=False)
+                bboxes: List[Tuple[int, int, int, int]] = []
+                for res in results:
+                    if res is not None and len(res.boxes) > 0:
+                        confs = res.boxes.conf.cpu().numpy()
+                        best_idx = int(np.argmax(confs))
+                        x1, y1, x2, y2 = [int(v) for v in res.boxes.xyxy[best_idx].cpu().numpy().tolist()]
+                        bboxes.append((x1, y1, max(0, x2 - x1), max(0, y2 - y1)))
+                    else:
+                        bboxes.append((0, 0, 0, 0))
+                return bboxes
+            except Exception:
+                pass
+        return [self.detect(img).get("bounding_box", (0, 0, 0, 0)) for img in images]
 
     def _detect_custom_pose(self, image: np.ndarray) -> Optional[Dict]:
         """Runs custom YOLO 8-corner keypoint model on image."""
