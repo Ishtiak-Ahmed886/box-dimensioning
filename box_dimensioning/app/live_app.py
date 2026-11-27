@@ -398,7 +398,7 @@ with tab_live:
                         from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
                         t_cls0 = _time.perf_counter()
                         cls_seg = ClassicalBoxSegmenter()
-                        cls_res = cls_seg.segment(target_raw_frame)
+                        cls_res = cls_seg.detect_corners(target_raw_frame)
                         cls_ms = (_time.perf_counter() - t_cls0) * 1000.0
 
                         t_dl0 = _time.perf_counter()
