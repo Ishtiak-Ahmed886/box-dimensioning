@@ -49,7 +49,7 @@ class QualityReport:
     details: Optional[Dict] = None
 
 
-DEFAULT_BLUR_THRESHOLD: float = 40.0
+DEFAULT_BLUR_THRESHOLD: float = 15.0  # Lowered: 40.0 false-rejected sharp book/cereal textures
 DEFAULT_TRUNCATION_MARGIN_PX: float = 8.0
 DEFAULT_MIN_BASELINE_METERS: float = 0.04
 DEFAULT_MAX_FIT_RESIDUAL: float = 0.05
