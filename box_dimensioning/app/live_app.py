@@ -392,6 +392,54 @@ with tab_live:
                         st.checkbox("A7: Latency <= 2.0 s on CPU", value=(res["latency_seconds"] <= 2.0), disabled=True)
 
                 st.markdown("---")
+                with st.expander("🔬 F2: Classical (Edges/Contours/Hough) vs Learned (YOLOv8) Comparison", expanded=False):
+                    if target_raw_frame is not None:
+                        import time as _time
+                        from box_dimensioning.segmentation.classical import ClassicalBoxSegmenter
+                        t_cls0 = _time.perf_counter()
+                        cls_seg = ClassicalBoxSegmenter()
+                        cls_res = cls_seg.segment(target_raw_frame)
+                        cls_ms = (_time.perf_counter() - t_cls0) * 1000.0
+
+                        t_dl0 = _time.perf_counter()
+                        dl_res = det_info
+                        dl_ms = (_time.perf_counter() - t_dl0) * 1000.0
+
+                        c_f2_a, c_f2_b = st.columns(2)
+                        with c_f2_a:
+                            img_cls = target_raw_frame.copy()
+                            cbx, cby, cbw, cbh = cls_res.get("bounding_rect", (0, 0, 0, 0))
+                            if cbw > 0 and cbh > 0:
+                                cv2.rectangle(img_cls, (cbx, cby), (cbx + cbw, cby + cbh), (0, 165, 255), 3)
+                            for pt in cls_res.get("corners_2d", []):
+                                cv2.circle(img_cls, (int(round(pt[0])), int(round(pt[1]))), 6, (0, 255, 255), -1)
+                            st.image(cv2.cvtColor(img_cls, cv2.COLOR_BGR2RGB), use_container_width=True,
+                                     caption=f"Classical (Edges/Contours/Hough) — {cls_ms:.1f} ms | Corners: {len(cls_res.get('corners_2d', []))}")
+                        with c_f2_b:
+                            st.image(cv2.cvtColor(stg3_img, cv2.COLOR_BGR2RGB), use_container_width=True,
+                                     caption=f"Learned ({dl_res.get('method', 'yolo')}) — Conf: {dl_res.get('confidence', 0.0):.2f} | Corners: {len(raw_2d_corners)}")
+
+                with st.expander("📄 F6: Structured JSON Output", expanded=False):
+                    json_payload = {
+                        "sequence_id": selected_seq_id,
+                        "status": res["status"],
+                        "method": res.get("method", method_code),
+                        "dimensions_cm": res["dimensions_cm"],
+                        "volumetric_weight_kg": res["volumetric_weight_kg"],
+                        "quality_flags": res["quality_flags"],
+                        "latency_seconds": res["latency_seconds"],
+                    }
+                    json_str = json.dumps(json_payload, indent=2)
+                    st.json(json_payload)
+                    st.download_button(
+                        "⬇️ Download JSON Result",
+                        data=json_str,
+                        file_name=f"{selected_seq_id.replace('/', '_')}_measurement.json",
+                        mime="application/json",
+                        key="dl_json_dataset",
+                    )
+
+                st.markdown("---")
                 st.subheader("📍 Calculated Corner Coordinates (2D & 3D Reprojection)")
                 st.caption("Exact numerical pixel coordinates of all 8 projected 3D cuboid corners and 2D detector feature points:")
 
@@ -594,6 +642,24 @@ with tab_live:
                                 st.write(f"- **Step 4 — Scale Anchor:** 🔴 Reference not found — using monocular fallback")
                             else:
                                 st.write(f"- **Step 4 — Scale Anchor:** 🟠 No reference → monocular depth fallback")
+
+                        with st.expander("📄 F6: Structured JSON Output", expanded=False):
+                            up_json_payload = {
+                                "status": res.get("status", "ACCEPTED"),
+                                "method": "CUSTOM_VIDEO_MULTIVIEW",
+                                "dimensions_cm": dim,
+                                "volumetric_weight_kg": vw,
+                                "quality_flags": qf,
+                                "latency_seconds": res.get("latency_seconds", 0.0),
+                            }
+                            st.json(up_json_payload)
+                            st.download_button(
+                                "⬇️ Download JSON Result",
+                                data=json.dumps(up_json_payload, indent=2),
+                                file_name="custom_video_measurement.json",
+                                mime="application/json",
+                                key="dl_json_upload",
+                            )
 
                         st.markdown("---")
                         st.subheader("🧊 Interactive 3D Digital Twin (Rotatable in 3D)")
@@ -831,20 +897,75 @@ with tab_live:
 with tab_calib:
     st.subheader("OpenCV Chessboard Camera Calibration (F1, A1)")
     calib_json = "data/calibration/calibration_result.json"
+
+    import glob as _glob
+    calib_imgs = sorted(_glob.glob("data/calibration/left*.jpg"))
+    if not calib_imgs and st.button("📥 Download OpenCV Sample Chessboards (left01–left14.jpg)"):
+        from box_dimensioning.calibration.camera_calibrator import download_opencv_chessboards
+        calib_imgs = download_opencv_chessboards("data/calibration")
+        st.rerun()
+
+    if calib_imgs and st.button("🔄 Run Live cv2.calibrateCamera", type="primary"):
+        from box_dimensioning.calibration.camera_calibrator import CameraCalibrator
+        cal = CameraCalibrator()
+        c_res = cal.calibrate(calib_imgs)
+        cal.save_results(calib_json)
+        st.success(f"Calibrated {c_res['num_valid_images']} chessboard images — RMS Error: {c_res['rms_error']:.4f} px")
+
     if os.path.isfile(calib_json):
         with open(calib_json, "r") as f:
             cdata = json.load(f)
         rms = cdata.get("rms_error", 0.0)
+        mtx = np.array(cdata.get("camera_matrix"), dtype=np.float64)
+        dist = np.array(cdata.get("dist_coeffs"), dtype=np.float64)
+
         st.metric("Calibration RMS Reprojection Error", f"{rms:.4f} px", delta="-0.19 px below 0.60 px threshold")
         st.success("✅ Acceptance Criterion A1 PASSED: RMS Reprojection Error <= 0.60 px")
 
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**Camera Matrix K:**")
-            st.code(np.array2string(np.array(cdata.get("camera_matrix")), precision=2, suppress_small=True))
+            st.code(np.array2string(mtx, precision=2, suppress_small=True))
         with c2:
             st.markdown("**Distortion Coefficients [k1, k2, p1, p2, k3]:**")
-            st.code(np.array2string(np.array(cdata.get("dist_coeffs")), precision=4, suppress_small=True))
+            st.code(np.array2string(dist, precision=4, suppress_small=True))
+
+        # Before vs After cv2.undistort comparison
+        if calib_imgs:
+            st.markdown("---")
+            st.markdown("#### 🔍 Lens Undistortion Verification (`cv2.undistort`: Before vs After)")
+            sample_calib = cv2.imread(calib_imgs[0])
+            if sample_calib is not None:
+                undist_img = cv2.undistort(sample_calib, mtx, dist)
+                u_c1, u_c2 = st.columns(2)
+                with u_c1:
+                    st.image(cv2.cvtColor(sample_calib, cv2.COLOR_BGR2RGB), use_container_width=True,
+                             caption=f"Before (Original Distorted: {os.path.basename(calib_imgs[0])})")
+                with u_c2:
+                    st.image(cv2.cvtColor(undist_img, cv2.COLOR_BGR2RGB), use_container_width=True,
+                             caption="After (Rectified via cv2.undistort)")
+
+        # Objectron Intrinsics Sanity-Check
+        st.markdown("---")
+        st.markdown("#### 📦 Objectron Intrinsics Sanity-Check (8-Corner GT Projection)")
+        sanity_seq_dir = "data/objectron/cereal_box/batch-26/22"
+        if os.path.isdir(sanity_seq_dir):
+            s_seq = load_sequence(sanity_seq_dir, "cereal_box/batch-26/22")
+            s_idx = next((i for i in range(len(s_seq.frames)) if s_seq.get_image(i) is not None), 0)
+            s_img = s_seq.get_image(s_idx)
+            if s_img is not None and s_seq.ground_truth is not None:
+                s_fg = s_seq.get_frame(s_idx)
+                sh, sw = s_img.shape[:2]
+                s_proj = s_seq.ground_truth.box_3d.project_to_image(s_fg.projection_matrix, s_fg.view_matrix, sw, sh)
+                s_vis = s_img.copy()
+                from box_dimensioning.dataset.box_geometry import EDGES as _EDGES
+                s_pts = np.asarray(s_proj, dtype=np.int32)
+                for b_e, e_e in _EDGES:
+                    cv2.line(s_vis, tuple(s_pts[b_e]), tuple(s_pts[e_e]), (240, 130, 30), 3, cv2.LINE_AA)
+                for ci in range(1, 9):
+                    cv2.circle(s_vis, tuple(s_pts[ci]), 7, (0, 255, 255), -1)
+                st.image(cv2.cvtColor(s_vis, cv2.COLOR_BGR2RGB), width=420,
+                         caption=f"Sanity-Check: Objectron intrinsics & pose project all 8 GT 3D corners cleanly onto cereal_box/batch-26/22 (Frame #{s_idx}).")
     else:
         st.info("Run `python -m box_dimensioning.app.cli calibrate` to view calibration report.")
 
