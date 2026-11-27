@@ -88,16 +88,15 @@ with tab_live:
         if not available_seqs:
             available_seqs = ["cereal_box/batch-26/22"]
 
-        # Prioritize sequences that have video or frames available locally
-        def _has_media(s_id: str) -> bool:
-            sp = os.path.join(base_data_dir, s_id)
-            has_vid = any(os.path.isfile(os.path.join(sp, v)) for v in ["video.MOV", "video.mp4", "video.mov"])
-            has_fr = os.path.isdir(os.path.join(sp, "frames")) and len(os.listdir(os.path.join(sp, "frames"))) > 0
-            return has_vid or has_fr
+        # Keep deterministic alphabetical order so downloading a video never shifts selectbox indices
+        available_seqs.sort()
 
-        available_seqs.sort(key=lambda s: (0 if _has_media(s) else 1, s))
-
-        selected_seq_id = st.selectbox("Select Sequence:", available_seqs, index=0)
+        selected_seq_id = st.selectbox(
+            "Select Sequence:",
+            available_seqs,
+            index=0,
+            key="objectron_seq_select",
+        )
         active_seq_dir = os.path.join(base_data_dir, selected_seq_id)
 
         # ── Video & Frame Preview Component ─────────────────────────────────────
